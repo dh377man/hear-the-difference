@@ -1,0 +1,2564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Hear the Difference — A Listening Game</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap">
+<style>
+  /* =========================================================
+     Hear the Difference — single-file music discrimination game
+     Author: built with Claude for Daniel Hellman
+     Target: K-5 general music, browser-based, no install
+     ========================================================= */
+
+  /* ---------- Design tokens (shared across all surfaces) ---------- */
+  :root {
+    /* Neutrals */
+    --bg-warm: #fdf8f1;
+    --bg-cool: #e8eef5;
+    --surface: #ffffff;
+    --ink: #1d2638;
+    --muted: #6b7280;
+    --border: #e3e7ed;
+    /* Mode accents — default to Junior; Pro overrides below */
+    --accent: #ff7a59;
+    --accent-2: #fbbf24;
+    /* Semantic */
+    --success: #34c97a;
+    --error:   #e85a4d;
+    --warning: #f5a623;
+    /* Motion */
+    --t-fast: 180ms;
+    --t-slow: 320ms;
+    /* Radii */
+    --r-btn: 18px;
+    --r-card: 24px;
+    /* Shadows */
+    --shadow-rest:  0 6px 18px rgba(29, 38, 56, 0.08);
+    --shadow-hover: 0 10px 28px rgba(29, 38, 56, 0.14);
+  }
+  body[data-grade="pro"] {
+    --accent: #0fb6c4;
+    --accent-2: #a855f7;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; min-height: 100%;
+    font-family: 'Manrope', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: linear-gradient(180deg, var(--bg-warm) 0%, var(--bg-cool) 100%);
+    color: var(--ink);
+    user-select: none;
+    font-weight: 500;
+  }
+  main {
+    min-height: 100vh; width: 100vw;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 80px 24px 40px;
+  }
+  .screen { display: none; width: 100%; max-width: 900px; text-align: center; }
+  .screen.active { display: flex; flex-direction: column; align-items: center; gap: 24px; }
+
+  h1 { font-size: clamp(36px, 6vw, 56px); margin: 0; color: #2d3142; letter-spacing: -1px; }
+  h2 { font-size: 36px; margin: 0; }
+  p  { font-size: 22px; margin: 0; line-height: 1.4; }
+
+  /* ----- Home ----- */
+  .mode-grid { display: flex; gap: 28px; flex-wrap: wrap; justify-content: center; margin-top: 20px; }
+  .mode-card {
+    background: white; border: 4px solid transparent; border-radius: 28px;
+    padding: 36px 28px; width: 280px; cursor: pointer;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+    transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+  }
+  .mode-card:hover, .mode-card:focus { transform: translateY(-4px); box-shadow: 0 12px 28px rgba(0,0,0,0.12); outline: none; }
+  .mode-card:focus { border-color: #4a90e2; }
+  .mode-card .emoji { font-size: 72px; line-height: 1; }
+  .mode-card .label { font-size: 28px; font-weight: 700; }
+  .mode-card .level-stars { font-size: 26px; color: #f5a623; min-height: 32px; }
+
+  /* ----- Buttons ----- */
+  .btn {
+    font-family: inherit; font-size: 32px; font-weight: 700;
+    padding: 22px 44px; border-radius: 20px; border: none;
+    cursor: pointer; min-height: 80px; min-width: 200px;
+    box-shadow: 0 6px 0 rgba(0,0,0,0.15);
+    transition: transform 0.08s, box-shadow 0.08s;
+  }
+  .btn:active { transform: translateY(3px); box-shadow: 0 3px 0 rgba(0,0,0,0.15); }
+  .btn:focus { outline: 4px solid #4a90e2; outline-offset: 4px; }
+  .btn-primary { background: #4a90e2; color: white; }
+  .btn-listen  { background: #7b61ff; color: white; font-size: 36px; min-width: 280px; }
+  .btn-same    { background: #4ec97a; color: white; min-width: 220px; }
+  .btn-diff    { background: #f5a623; color: white; min-width: 220px; }
+  .btn-ghost   { background: white; color: #4a90e2; box-shadow: 0 4px 0 #cbdcee; font-size: 22px; padding: 14px 28px; min-height: 56px; min-width: 0; }
+
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ----- Play screen ----- */
+  .progress { display: flex; gap: 10px; }
+  .progress .dot { width: 22px; height: 22px; border-radius: 50%; background: #d8e0ea; }
+  .progress .dot.correct   { background: #4ec97a; }
+  .progress .dot.incorrect { background: #e74c3c; }
+
+  .pattern-strip {
+    display: flex; align-items: center; justify-content: center;
+    gap: 14px; min-height: 140px; margin: 8px 0;
+  }
+  .pattern-row { display: flex; gap: 14px; align-items: center; padding: 12px 18px; border-radius: 20px; min-height: 110px; }
+  .pattern-row { border: 4px solid transparent; transition: border-color 0.2s, opacity 0.3s, background 0.3s; opacity: 0.45; }
+  .pattern-row.A { background: rgba(74,144,226,0.10); }
+  .pattern-row.B { background: rgba(245,166,35,0.10); }
+  .pattern-row.playing { opacity: 1; }
+  .pattern-row.A.playing { border-color: #4a90e2; box-shadow: 0 0 0 4px rgba(74,144,226,0.18); }
+  .pattern-row.B.playing { border-color: #f5a623; box-shadow: 0 0 0 4px rgba(245,166,35,0.18); }
+  .pattern-row.done { opacity: 1; }
+  .pattern-row.done .pattern-label::after { content: ' ✓'; }
+  .pattern-label { font-size: 22px; font-weight: 700; min-width: 90px; text-align: left; }
+  .pattern-row.A .pattern-label { color: #4a90e2; }
+  .pattern-row.B .pattern-label { color: #d97f0a; }
+
+  .pattern-row { min-height: 180px; }
+  .note {
+    width: 56px; height: 56px; border-radius: 50%;
+    background: #cbdcee; transition: transform 0.25s ease, box-shadow 0.15s, background 0.15s, border-color 0.15s;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .note.placeholder { background: #e6ecf3; opacity: 0.55; }
+  .note.A.active { background: #4a90e2; transform: scale(1.25); box-shadow: 0 0 24px #4a90e2; }
+  .note.B.active { background: #f5a623; transform: scale(1.25); box-shadow: 0 0 24px #f5a623; }
+
+  /* Rhythm-mode visual: filled = click, hollow = rest */
+  .note.rest { background: transparent; border: 4px dashed #b0bccd; }
+  .note.A.rest.active { border-color: #4a90e2; background: transparent; }
+  .note.B.rest.active { border-color: #f5a623; background: transparent; }
+
+  .gap-pulse {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: #d8e0ea; opacity: 0.5;
+  }
+  .gap-pulse.active { animation: pulse 0.6s ease-out; }
+  @keyframes pulse {
+    0%   { transform: scale(0.6); opacity: 0.3; background: #7b61ff; }
+    50%  { transform: scale(1.4); opacity: 0.8; }
+    100% { transform: scale(0.6); opacity: 0.3; background: #7b61ff; }
+  }
+
+  .choice-row { display: flex; gap: 28px; flex-wrap: wrap; justify-content: center; }
+
+  .feedback {
+    font-size: 72px; min-height: 90px;
+    display: flex; align-items: center; justify-content: center;
+    gap: 14px;
+  }
+  .feedback .word { font-size: 36px; font-weight: 700; }
+  .feedback.correct .word   { color: #4ec97a; }
+  .feedback.incorrect .word { color: #e74c3c; }
+
+  /* ----- Summary ----- */
+  .stars { font-size: 96px; color: #f5a623; letter-spacing: 8px; }
+  .stars .dim { color: #d8e0ea; }
+
+  /* ----- Top bar ----- */
+  .top-bar {
+    position: fixed; top: 16px; left: 16px; right: 16px;
+    display: flex; justify-content: space-between; align-items: center;
+    pointer-events: none;
+  }
+  .top-bar .btn-ghost { pointer-events: auto; }
+  .level-pill {
+    background: white; padding: 8px 18px; border-radius: 20px;
+    font-size: 18px; font-weight: 700; color: #4a90e2;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    pointer-events: auto;
+  }
+
+  /* ----- Modal ----- */
+  .modal-backdrop {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.4); z-index: 100;
+    align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-backdrop.active { display: flex; }
+  .modal {
+    background: white; border-radius: 24px; padding: 32px;
+    max-width: 540px; width: 100%; text-align: left;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+  }
+  .modal h2 { margin-bottom: 12px; text-align: center; }
+  .modal p, .modal li { font-size: 18px; line-height: 1.5; }
+  .modal ul { padding-left: 22px; }
+  .modal .modal-close { display: block; margin: 20px auto 0; }
+
+  /* ----- Mascot ----- */
+  .mascot {
+    position: fixed; bottom: 20px; left: 20px;
+    display: flex; align-items: flex-end; gap: 12px;
+    pointer-events: none; z-index: 50;
+  }
+  .mascot .owl {
+    font-size: 72px;
+    filter: drop-shadow(0 4px 8px rgba(0,0,0,0.15));
+    transition: transform 0.3s;
+  }
+  .mascot.cheer .owl { animation: bounce 0.6s ease-out; }
+  @keyframes bounce {
+    0%,100% { transform: translateY(0); }
+    50%     { transform: translateY(-18px); }
+  }
+  .mascot .bubble {
+    background: white; border-radius: 18px; padding: 12px 18px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+    font-size: 18px; font-weight: 600; max-width: 240px;
+    position: relative; opacity: 0; transform: translateY(10px);
+    transition: opacity 0.25s, transform 0.25s;
+  }
+  .mascot .bubble::before {
+    content: ''; position: absolute; left: -8px; bottom: 16px;
+    width: 0; height: 0;
+    border-top: 10px solid transparent; border-bottom: 10px solid transparent;
+    border-right: 10px solid white;
+  }
+  .mascot.show .bubble { opacity: 1; transform: translateY(0); }
+
+  /* ----- Avatar select ----- */
+  .avatar-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 16px; }
+  .avatar-card {
+    background: white; border: 4px solid transparent; border-radius: 20px;
+    padding: 18px; cursor: pointer; font-size: 56px; line-height: 1;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.08);
+    transition: transform 0.15s, border-color 0.15s;
+  }
+  .avatar-card:hover, .avatar-card:focus { transform: translateY(-3px); border-color: #4a90e2; outline: none; }
+  .avatar-card.selected { border-color: #4ec97a; background: #f0fbf3; }
+
+  /* ----- Top bar avatar pill ----- */
+  .my-avatar {
+    background: white; padding: 6px 14px; border-radius: 999px;
+    font-size: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    pointer-events: auto; cursor: pointer; border: none;
+  }
+
+  /* ----- Sticker book ----- */
+  .sticker-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 16px 0; max-width: 600px; width: 100%; }
+  .sticker {
+    background: white; border-radius: 18px; padding: 16px 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    text-align: center;
+  }
+  .sticker .icon { font-size: 48px; line-height: 1; }
+  .sticker .name { font-size: 15px; font-weight: 700; }
+  .sticker .desc { font-size: 13px; color: #6b7280; line-height: 1.3; }
+  .sticker.locked { opacity: 0.35; filter: grayscale(1); }
+  .sticker.locked .icon::after { content: '?'; }
+
+  /* Sticker earned toast */
+  .toast {
+    position: fixed; top: 30%; left: 50%;
+    transform: translate(-50%, -50%) scale(0.7);
+    background: linear-gradient(135deg, #ffd700, #f5a623);
+    color: white; padding: 28px 36px; border-radius: 28px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+    z-index: 150; pointer-events: none;
+    opacity: 0; transition: opacity 0.3s, transform 0.4s cubic-bezier(.34,1.56,.64,1);
+    text-align: center; min-width: 260px;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  .toast .toast-icon { font-size: 72px; line-height: 1; }
+  .toast .toast-title { font-size: 22px; font-weight: 700; margin-top: 8px; }
+  .toast .toast-name { font-size: 18px; margin-top: 4px; }
+
+  /* =========================================================
+     PRO MODE (Grades 3-5) — dark synthwave theme
+     ========================================================= */
+  body[data-grade="pro"] {
+    background: radial-gradient(ellipse at top, #1a1f3a 0%, #0a0e1f 100%);
+    color: #e0e7ff;
+  }
+  body[data-grade="pro"] h1 {
+    color: #00f0ff;
+    text-shadow: 0 0 24px rgba(0,240,255,0.5);
+    letter-spacing: 4px;
+    font-size: clamp(32px, 6vw, 56px);
+  }
+  body[data-grade="pro"] h2 { color: #e0e7ff; }
+  body[data-grade="pro"] p { color: #a8b0c8; }
+  body[data-grade="pro"] .mode-card { background: rgba(30,40,70,0.6); color: #e0e7ff; }
+  body[data-grade="pro"] .mode-card:hover,
+  body[data-grade="pro"] .mode-card:focus { border-color: #00f0ff; box-shadow: 0 0 30px rgba(0,240,255,0.35); }
+  body[data-grade="pro"] .btn-primary { background: linear-gradient(135deg, #ff00aa, #00f0ff); box-shadow: 0 6px 0 #2a0c4a; }
+  body[data-grade="pro"] .btn-listen  { background: linear-gradient(135deg, #00f0ff, #6a5cff); box-shadow: 0 6px 0 #0a1a4a; }
+  body[data-grade="pro"] .btn-same    { background: linear-gradient(135deg, #00ff88, #00d9c8); color: #001016; box-shadow: 0 6px 0 #003b3a; }
+  body[data-grade="pro"] .btn-diff    { background: linear-gradient(135deg, #ff00aa, #ff3366); box-shadow: 0 6px 0 #4a0030; }
+  body[data-grade="pro"] .btn-ghost   { background: transparent; color: #00f0ff; border: 2px solid #00f0ff; box-shadow: none; }
+  body[data-grade="pro"] .level-pill  { background: rgba(0,240,255,0.15); color: #00f0ff; border: 1px solid #00f0ff; }
+  body[data-grade="pro"] .note        { background: #2a3556; }
+  body[data-grade="pro"] .note.placeholder { background: #1a2240; opacity: 0.6; }
+  body[data-grade="pro"] .note.A.active { background: #00f0ff; box-shadow: 0 0 32px #00f0ff; }
+  body[data-grade="pro"] .note.B.active { background: #ff00aa; box-shadow: 0 0 32px #ff00aa; }
+  body[data-grade="pro"] .note.rest { border-color: #4a5680; }
+  body[data-grade="pro"] .pattern-row.A { background: rgba(0,240,255,0.08); }
+  body[data-grade="pro"] .pattern-row.B { background: rgba(255,0,170,0.08); }
+  body[data-grade="pro"] .pattern-row.A.playing { border-color: #00f0ff; box-shadow: 0 0 0 4px rgba(0,240,255,0.3); }
+  body[data-grade="pro"] .pattern-row.B.playing { border-color: #ff00aa; box-shadow: 0 0 0 4px rgba(255,0,170,0.3); }
+  body[data-grade="pro"] .pattern-row.A .pattern-label { color: #00f0ff; }
+  body[data-grade="pro"] .pattern-row.B .pattern-label { color: #ff66cc; }
+  body[data-grade="pro"] .modal { background: #1a1f3a; color: #e0e7ff; }
+  body[data-grade="pro"] .modal p, body[data-grade="pro"] .modal li { color: #a8b0c8; }
+  body[data-grade="pro"] #unlock { background: #0a0e1f; }
+  body[data-grade="pro"] .my-avatar { background: rgba(0,240,255,0.15); border: 1px solid #00f0ff; color: #00f0ff; }
+  body[data-grade="pro"] .sticker, body[data-grade="pro"] .grade-card, body[data-grade="pro"] .avatar-card {
+    background: rgba(30,40,70,0.7); color: #e0e7ff;
+  }
+  body[data-grade="pro"] .sticker .desc { color: #8090b0; }
+  body[data-grade="pro"] .avatar-card.selected { border-color: #00f0ff; background: linear-gradient(135deg, #00f0ff, #ff00aa); color: white; }
+
+  /* HUD (Pro only) */
+  .hud { display: none; position: fixed; top: 64px; left: 16px; right: 16px; z-index: 30; justify-content: space-between; align-items: flex-start; gap: 10px; pointer-events: none; }
+  body[data-grade="pro"] .hud.active { display: flex; }
+  .hud-block { background: rgba(0,0,0,0.45); padding: 10px 16px; border-radius: 14px; border: 1px solid rgba(0,240,255,0.3); }
+  .hud-label { font-size: 11px; color: #00f0ff; letter-spacing: 3px; font-weight: 800; }
+  .hud-xp .xp-bar { width: 220px; height: 10px; background: rgba(255,255,255,0.1); border-radius: 5px; margin-top: 6px; overflow: hidden; }
+  .hud-xp .xp-fill { height: 100%; background: linear-gradient(90deg, #00f0ff, #ff00aa); width: 0%; transition: width 0.4s ease-out; box-shadow: 0 0 10px #00f0ff; }
+  .hud-score { text-align: right; }
+  .hud-score .value { font-size: 28px; font-weight: 800; color: white; }
+  .hud-combo .value { font-size: 24px; font-weight: 800; color: #ffaa00; text-shadow: 0 0 10px #ffaa00; }
+
+  /* Combo banner */
+  .combo-banner {
+    position: fixed; top: 28%; left: 50%; transform: translate(-50%,-50%) scale(0);
+    background: linear-gradient(135deg, #ff00aa, #00f0ff);
+    padding: 18px 44px; border-radius: 28px;
+    font-size: 38px; font-weight: 900; color: white; letter-spacing: 3px;
+    box-shadow: 0 0 60px rgba(255,0,170,0.6);
+    z-index: 80; pointer-events: none; opacity: 0;
+    transition: opacity 0.2s, transform 0.4s cubic-bezier(.34,1.56,.64,1);
+  }
+  .combo-banner.show { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+
+  /* Level-up flash */
+  .levelup-overlay {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    background: radial-gradient(circle at center, rgba(0,240,255,0.35), transparent 65%);
+    z-index: 95; pointer-events: none;
+  }
+  .levelup-overlay.show { display: flex; animation: levelflash 1.6s ease-out forwards; }
+  .levelup-overlay .banner { font-size: 64px; font-weight: 900; color: white; text-shadow: 0 0 40px #00f0ff; letter-spacing: 8px; }
+  @keyframes levelflash {
+    0%   { opacity: 0; transform: scale(0.6); }
+    20%  { opacity: 1; transform: scale(1.0); }
+    100% { opacity: 0; transform: scale(1.4); }
+  }
+
+  /* Grade-band select */
+  .grade-grid { display: flex; gap: 24px; flex-wrap: wrap; justify-content: center; margin-top: 12px; }
+  .grade-card {
+    background: white; border: 4px solid transparent; border-radius: 24px;
+    padding: 28px 24px; width: 260px; cursor: pointer; text-align: center;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+    transition: transform 0.15s, border-color 0.15s;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+  }
+  .grade-card:hover, .grade-card:focus { transform: translateY(-3px); border-color: #4a90e2; outline: none; }
+  .grade-card .icon { font-size: 64px; line-height: 1; }
+  .grade-card .label { font-size: 26px; font-weight: 700; }
+  .grade-card .sub { font-size: 15px; color: #6b7280; }
+
+  /* Daily streak chip */
+  .streak-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #fff5eb; padding: 8px 16px; border-radius: 999px;
+    font-size: 16px; font-weight: 700; color: #ff6b35;
+    border: 2px solid #ffb088;
+  }
+  body[data-grade="pro"] .streak-chip { background: rgba(255,170,0,0.15); color: #ffaa00; border-color: #ffaa00; }
+
+  /* ----- Shared brand header + screen scaffolding ----- */
+  .brand-header { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .screen-heading { font-size: clamp(28px, 4vw, 36px); font-weight: 700; margin: 0; letter-spacing: -0.5px; color: var(--ink); }
+  .screen-tagline { margin: 0; color: var(--muted); font-size: 16px; }
+  .screen-actions { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin-top: 16px; }
+  .btn-quiet {
+    background: var(--surface);
+    color: var(--ink);
+    border: 2px solid var(--border);
+    padding: 12px 22px;
+    font-size: 15px; font-weight: 600;
+    border-radius: var(--r-btn);
+    cursor: pointer; font-family: inherit;
+    transition: border-color var(--t-fast), color var(--t-fast), transform var(--t-fast);
+    min-height: 0; min-width: 0;
+    box-shadow: none;
+  }
+  .btn-quiet:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-1px); }
+  .btn-quiet.danger { color: var(--error); border-color: rgba(232,90,77,0.35); }
+  .btn-quiet.danger:hover { border-color: var(--error); color: var(--error); }
+  .btn-pp-primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: white; border: none;
+    padding: 12px 24px; font-size: 15px; font-weight: 700;
+    border-radius: var(--r-btn);
+    cursor: pointer; font-family: inherit;
+    transition: transform var(--t-fast), box-shadow var(--t-fast);
+    box-shadow: 0 4px 14px rgba(255,122,89,0.25);
+    min-height: 0; min-width: 0;
+  }
+  .btn-pp-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(255,122,89,0.35); }
+
+  /* ----- Auth screen (sign in / sign up) ----- */
+  #auth.active { gap: 24px; max-width: 480px; }
+  .auth-brand, .brand-header { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .brand-wordmark {
+    font-family: 'Manrope', sans-serif;
+    font-weight: 800; font-size: 30px;
+    letter-spacing: -0.5px; color: var(--ink);
+  }
+  .brand-wordmark .accent {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .brand-wave { width: 200px; height: 20px; }
+
+  .auth-card {
+    background: var(--surface);
+    border-radius: var(--r-card);
+    padding: 36px 32px;
+    box-shadow: var(--shadow-rest);
+    width: 100%; max-width: 440px;
+    text-align: left;
+  }
+  .auth-card h2 {
+    font-size: 26px; font-weight: 700; margin: 0 0 6px 0;
+    color: var(--ink); letter-spacing: -0.3px;
+  }
+  .auth-card #auth-tagline {
+    margin: 0 0 22px 0; color: var(--muted); font-size: 15px;
+  }
+  .auth-toggle {
+    display: flex; background: var(--bg-cool);
+    padding: 4px; border-radius: 12px; margin-bottom: 22px;
+    gap: 4px;
+  }
+  .auth-toggle-btn {
+    flex: 1; background: transparent; border: none;
+    padding: 10px 0; font-family: inherit;
+    font-size: 14px; font-weight: 600; color: var(--muted);
+    border-radius: 8px; cursor: pointer;
+    transition: background var(--t-fast), color var(--t-fast), box-shadow var(--t-fast);
+  }
+  .auth-toggle-btn.active {
+    background: var(--surface); color: var(--ink);
+    box-shadow: 0 2px 6px rgba(29,38,56,0.08);
+  }
+  .auth-fields { display: flex; flex-direction: column; gap: 14px; margin-bottom: 18px; }
+  .auth-field  { display: flex; flex-direction: column; gap: 6px; }
+  .auth-label  { font-size: 13px; font-weight: 600; color: var(--ink); letter-spacing: 0.2px; }
+  .auth-field input {
+    font-family: inherit; font-size: 16px;
+    padding: 12px 14px;
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface); color: var(--ink);
+    transition: border-color var(--t-fast), box-shadow var(--t-fast);
+  }
+  .auth-field input:focus {
+    outline: none; border-color: var(--accent);
+    box-shadow: 0 0 0 4px rgba(255,122,89,0.15);
+  }
+  .btn-auth {
+    width: 100%;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: white; border: none;
+    padding: 15px 24px; font-size: 16px; font-weight: 700;
+    border-radius: var(--r-btn);
+    cursor: pointer; font-family: inherit;
+    transition: transform var(--t-fast), box-shadow var(--t-fast), opacity var(--t-fast);
+    box-shadow: 0 4px 14px rgba(255,122,89,0.25);
+    letter-spacing: 0.2px;
+  }
+  .btn-auth:hover  { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(255,122,89,0.35); }
+  .btn-auth:active { transform: translateY(0); }
+  .btn-auth:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+  .auth-error {
+    min-height: 20px; margin: 12px 0 0 0;
+    color: var(--error); font-size: 14px;
+    text-align: center; font-weight: 500;
+  }
+  .auth-link {
+    display: block; text-align: center; margin-top: 14px;
+    color: var(--muted); font-size: 14px; font-weight: 500;
+    text-decoration: none; cursor: pointer;
+    transition: color var(--t-fast);
+  }
+  .auth-link:hover { color: var(--accent); }
+
+  /* ----- Setup / class / dashboard screens ----- */
+  .setup-grid { display: flex; gap: 24px; flex-wrap: wrap; justify-content: center; margin-top: 12px; }
+  .student-list {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px; width: 100%; max-width: 720px; margin-top: 8px;
+  }
+  .student-pick {
+    background: var(--surface);
+    border: 2px solid transparent;
+    border-radius: var(--r-card);
+    padding: 24px 16px;
+    cursor: pointer;
+    box-shadow: var(--shadow-rest);
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    transition: transform var(--t-fast), border-color var(--t-fast), box-shadow var(--t-fast);
+    font-family: inherit;
+  }
+  .student-pick:hover, .student-pick:focus {
+    transform: translateY(-3px); border-color: var(--accent);
+    box-shadow: var(--shadow-hover); outline: none;
+  }
+  .student-pick .av { font-size: 56px; line-height: 1; }
+  .student-pick .nm { font-size: 20px; font-weight: 700; color: var(--ink); }
+  body[data-grade="pro"] .student-pick { background: rgba(30,40,70,0.7); color: #e0e7ff; }
+  body[data-grade="pro"] .student-pick .nm { color: #e0e7ff; }
+
+  /* Teacher dashboard table */
+  .dashboard-table {
+    width: 100%; max-width: 1000px; background: var(--surface);
+    border-radius: var(--r-card); overflow: hidden;
+    box-shadow: var(--shadow-rest); font-size: 15px;
+  }
+  .dashboard-table table { width: 100%; border-collapse: collapse; }
+  .dashboard-table th, .dashboard-table td {
+    padding: 14px 12px; text-align: left; border-bottom: 1px solid var(--border);
+  }
+  .dashboard-table th {
+    background: var(--bg-cool);
+    font-size: 11px; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--muted); font-weight: 700;
+  }
+  .dashboard-table tr:last-child td { border-bottom: none; }
+  .dashboard-table tbody tr { transition: background var(--t-fast); }
+  .dashboard-table tbody tr:hover { background: rgba(15,182,196,0.05); }
+  .mastery-row { display: inline-flex; gap: 5px; vertical-align: middle; }
+  .mastery-dot {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--border); border: 2px solid #cfd6df;
+  }
+  .mastery-dot.inline { width: 11px; height: 11px; vertical-align: -1px; }
+  .mastery-dot.progress { background: #ffd966; border-color: var(--warning); }
+  .mastery-dot.mastered { background: #34c97a; border-color: #29a060; }
+  /* Per-row Play button in dashboard */
+  .dash-play {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: white; border: none;
+    padding: 6px 14px; font-size: 13px; font-weight: 700;
+    border-radius: 999px; cursor: pointer; font-family: inherit;
+    transition: transform var(--t-fast), box-shadow var(--t-fast);
+  }
+  .dash-play:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(255,122,89,0.3); }
+
+  /* Settings modal */
+  .settings-modal { max-width: 420px; }
+  .settings-section { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+  .settings-section-label {
+    font-size: 11px; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 1.5px;
+    margin-bottom: 4px;
+  }
+  .settings-btn { width: 100%; text-align: left; padding: 12px 18px; }
+
+  .pin-input {
+    display: flex; gap: 12px; justify-content: center; margin: 16px 0;
+  }
+  .pin-input input {
+    width: 64px; height: 80px; font-size: 36px; text-align: center;
+    border: 3px solid #cbdcee; border-radius: 14px; font-weight: 700;
+  }
+  .pin-input input:focus { outline: none; border-color: #4a90e2; }
+
+  .name-form { display: flex; flex-direction: column; gap: 14px; max-width: 360px; margin: 0 auto; }
+  .name-form input {
+    font-size: 22px; padding: 12px 16px; border-radius: 12px;
+    border: 3px solid #cbdcee;
+  }
+  .name-form input:focus { outline: none; border-color: #4a90e2; }
+
+  .teacher-icon {
+    background: white; border: none; padding: 8px 12px; border-radius: 999px;
+    font-size: 22px; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    pointer-events: auto;
+  }
+
+  /* Reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.05s !important; }
+  }
+
+  /* ----- Audio-unlock overlay ----- */
+  /* ----- Cover (unlock screen) — continuous with the rest of the system ----- */
+  #unlock {
+    position: fixed; inset: 0;
+    background: linear-gradient(180deg, var(--bg-warm) 0%, var(--bg-cool) 100%);
+    color: var(--ink);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 36px; z-index: 200; cursor: pointer; padding: 32px;
+    text-align: center;
+  }
+  #unlock .wordmark {
+    font-family: 'Manrope', sans-serif;
+    font-weight: 800;
+    font-size: clamp(40px, 8vw, 84px);
+    line-height: 1.0;
+    letter-spacing: -2px;
+    color: var(--ink);
+    margin: 0;
+  }
+  #unlock .wordmark .accent {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  #unlock .tagline {
+    font-size: 18px; font-weight: 500;
+    color: var(--muted);
+    margin: 0; letter-spacing: 0.3px;
+  }
+  /* Animated waveform — the single brand motif */
+  #unlock .wave {
+    width: min(560px, 80vw); height: 80px;
+    overflow: visible;
+  }
+  #unlock .wave path {
+    fill: none;
+    stroke: url(#waveGradient);
+    stroke-width: 4;
+    stroke-linecap: round;
+    animation: waveShift 8s ease-in-out infinite;
+    transform-origin: center;
+  }
+  @keyframes waveShift {
+    0%, 100% { transform: translateX(0); }
+    50%      { transform: translateX(-18px); }
+  }
+  #unlock .tap-hint {
+    font-size: 14px; font-weight: 600;
+    color: var(--muted);
+    letter-spacing: 2px; text-transform: uppercase;
+    opacity: 0.7;
+    animation: tapHintPulse 2.2s ease-in-out infinite;
+  }
+  @keyframes tapHintPulse {
+    0%, 100% { opacity: 0.45; }
+    50%      { opacity: 0.85; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Shared SVG defs (brand gradient referenced by every wave) -->
+<svg width="0" height="0" style="position:absolute;" aria-hidden="true">
+  <defs>
+    <linearGradient id="brandGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%"   stop-color="#ff7a59"/>
+      <stop offset="100%" stop-color="#0fb6c4"/>
+    </linearGradient>
+  </defs>
+</svg>
+
+<!-- Audio unlock (required for iOS / Safari) — also the cover / hero screen -->
+<div id="unlock">
+  <h1 class="wordmark">Hear the<br><span class="accent">Difference</span></h1>
+  <svg class="wave" viewBox="0 0 600 80" aria-hidden="true">
+    <defs>
+      <linearGradient id="waveGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%"   stop-color="#ff7a59"/>
+        <stop offset="100%" stop-color="#0fb6c4"/>
+      </linearGradient>
+    </defs>
+    <path d="M0,40 Q40,10 80,40 T160,40 T240,40 T320,40 T400,40 T480,40 T560,40 T640,40"/>
+  </svg>
+  <p class="tagline">A listening game</p>
+  <p class="tap-hint">Tap anywhere to begin</p>
+</div>
+
+<div class="top-bar">
+  <button id="back-btn" class="btn btn-ghost" style="display:none;">← Home</button>
+  <span id="level-pill" class="level-pill" style="display:none;"></span>
+  <button id="my-avatar" class="my-avatar" style="display:none;" title="Change avatar">🦊</button>
+</div>
+
+<!-- Echo the owl mascot -->
+<div class="mascot" id="mascot" style="display:none;">
+  <div class="owl">🦉</div>
+  <div class="bubble" id="mascot-bubble">Hi! I'm Echo.</div>
+</div>
+
+<!-- HUD (Pro mode only, visible during play) -->
+<div class="hud" id="hud">
+  <div class="hud-block hud-xp">
+    <div class="hud-label">XP</div>
+    <div class="xp-bar"><div class="xp-fill" id="xp-fill"></div></div>
+  </div>
+  <div class="hud-block hud-combo" id="hud-combo" style="visibility:hidden;">
+    <div class="hud-label">COMBO</div>
+    <div class="value" id="combo-value">×1</div>
+  </div>
+  <div class="hud-block hud-score">
+    <div class="hud-label">SCORE</div>
+    <div class="value" id="score-value">0</div>
+  </div>
+</div>
+
+<!-- Combo milestone banner -->
+<div class="combo-banner" id="combo-banner"></div>
+
+<!-- Level-up flash overlay -->
+<div class="levelup-overlay" id="levelup-overlay">
+  <div class="banner">LEVEL UP</div>
+</div>
+
+<!-- Sticker earned toast -->
+<div class="toast" id="toast">
+  <div class="toast-icon" id="toast-icon">⭐</div>
+  <div class="toast-title">New Sticker!</div>
+  <div class="toast-name" id="toast-name"></div>
+</div>
+
+<main>
+
+  <!-- AUTH: sign in / sign up -->
+  <section id="auth" class="screen">
+    <div class="auth-brand">
+      <span class="brand-wordmark">Hear the <span class="accent">Difference</span></span>
+      <svg class="brand-wave" viewBox="0 0 200 20" aria-hidden="true">
+        <path d="M0,10 Q12,2 24,10 T48,10 T72,10 T96,10 T120,10 T144,10 T168,10 T200,10"
+              fill="none" stroke="url(#brandGradient)" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="auth-card">
+      <h2 id="auth-heading">Welcome back</h2>
+      <p id="auth-tagline">Sign in to manage your class.</p>
+
+      <div class="auth-toggle" role="tablist">
+        <button id="auth-tab-signin" class="auth-toggle-btn active" role="tab">Sign In</button>
+        <button id="auth-tab-signup" class="auth-toggle-btn" role="tab">Sign Up</button>
+      </div>
+
+      <div class="auth-fields">
+        <label class="auth-field" id="auth-name-field" style="display:none;">
+          <span class="auth-label">Your name</span>
+          <input id="auth-name" type="text" maxlength="40" placeholder="e.g., Daniel Hellman">
+        </label>
+        <label class="auth-field">
+          <span class="auth-label">Email</span>
+          <input id="auth-email" type="email" autocomplete="email" placeholder="you@example.com">
+        </label>
+        <label class="auth-field">
+          <span class="auth-label">Password</span>
+          <input id="auth-password" type="password" autocomplete="current-password" placeholder="At least 6 characters">
+        </label>
+      </div>
+
+      <button id="auth-submit" class="btn-auth">Sign In</button>
+      <p id="auth-error" class="auth-error"></p>
+      <a id="auth-forgot" class="auth-link">Forgot your password?</a>
+    </div>
+  </section>
+
+  <!-- SETUP: single vs class -->
+  <section id="setup-mode" class="screen">
+    <h1>Hear the Difference</h1>
+    <p>Let's get set up.</p>
+    <div class="setup-grid">
+      <button class="grade-card" data-setup="single">
+        <span class="icon">🎧</span>
+        <span class="label">Just Me</span>
+        <span class="sub">One student on this device</span>
+      </button>
+      <button class="grade-card" data-setup="class">
+        <span class="icon">🏫</span>
+        <span class="label">I'm a Teacher</span>
+        <span class="sub">Set up a class roster</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- CLASS SETUP: teacher PIN -->
+  <section id="pin-setup" class="screen">
+    <h1>Create a Teacher PIN</h1>
+    <p>4 digits. Only you should know this.<br>You'll use it to see the class dashboard.</p>
+    <div class="pin-input" id="pin-setup-input">
+      <input maxlength="1" inputmode="numeric" pattern="[0-9]">
+      <input maxlength="1" inputmode="numeric" pattern="[0-9]">
+      <input maxlength="1" inputmode="numeric" pattern="[0-9]">
+      <input maxlength="1" inputmode="numeric" pattern="[0-9]">
+    </div>
+    <div style="display:flex; gap:12px; flex-wrap:wrap; justify-content:center;">
+      <button id="pin-setup-back" class="btn btn-ghost">← Back</button>
+      <button id="pin-setup-confirm" class="btn btn-primary" disabled>Save PIN</button>
+    </div>
+  </section>
+
+  <!-- ADD STUDENT: name + grade band -->
+  <section id="add-student" class="screen">
+    <div class="brand-header">
+      <span class="brand-wordmark">Hear the <span class="accent">Difference</span></span>
+      <svg class="brand-wave" viewBox="0 0 200 20" aria-hidden="true">
+        <path d="M0,10 Q12,2 24,10 T48,10 T72,10 T96,10 T120,10 T144,10 T168,10 T200,10"
+              fill="none" stroke="url(#brandGradient)" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="auth-card">
+      <h2 id="add-student-title">Add a Student</h2>
+      <p style="margin:0 0 22px 0; color: var(--muted); font-size: 15px;">Add a student to your class roster.</p>
+
+      <div class="auth-fields">
+        <label class="auth-field">
+          <span class="auth-label">Student name</span>
+          <input id="new-student-name" type="text" maxlength="20" placeholder="e.g., Maria">
+        </label>
+        <div class="auth-field">
+          <span class="auth-label">Grade level</span>
+          <div class="auth-toggle" id="new-grade-toggle">
+            <button class="auth-toggle-btn active" data-newgrade="junior">K – 2</button>
+            <button class="auth-toggle-btn"        data-newgrade="pro">3 – 5</button>
+          </div>
+        </div>
+      </div>
+
+      <button id="add-student-submit" class="btn-auth">Add Student</button>
+      <a id="add-student-cancel" class="auth-link">Cancel</a>
+    </div>
+  </section>
+
+  <!-- STUDENT SELECT (class mode, every launch) -->
+  <section id="student-select" class="screen">
+    <div class="brand-header">
+      <span class="brand-wordmark">Hear the <span class="accent">Difference</span></span>
+      <svg class="brand-wave" viewBox="0 0 200 20" aria-hidden="true">
+        <path d="M0,10 Q12,2 24,10 T48,10 T72,10 T96,10 T120,10 T144,10 T168,10 T200,10"
+              fill="none" stroke="url(#brandGradient)" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <h2 class="screen-heading">Who's Playing?</h2>
+    <p class="screen-tagline">Tap your name to start.</p>
+    <div class="student-list" id="student-list"></div>
+    <div class="screen-actions">
+      <button id="add-more-student-btn" class="btn-quiet">+ Add Student</button>
+      <button id="teacher-access-btn" class="btn-pp-primary">📊 Dashboard</button>
+      <button id="signout-btn" class="btn-quiet">Sign Out</button>
+    </div>
+  </section>
+
+  <!-- TEACHER PIN ENTRY -->
+  <section id="pin-entry" class="screen">
+    <h1>Teacher PIN</h1>
+    <p>Enter your 4-digit PIN.</p>
+    <div class="pin-input" id="pin-entry-input">
+      <input maxlength="1" inputmode="numeric" pattern="[0-9]">
+      <input maxlength="1" inputmode="numeric" pattern="[0-9]">
+      <input maxlength="1" inputmode="numeric" pattern="[0-9]">
+      <input maxlength="1" inputmode="numeric" pattern="[0-9]">
+    </div>
+    <p id="pin-error" style="color:#e74c3c; min-height: 24px;"></p>
+    <button id="pin-entry-cancel" class="btn btn-ghost">Cancel</button>
+  </section>
+
+  <!-- TEACHER DASHBOARD -->
+  <section id="teacher-dashboard" class="screen">
+    <div class="brand-header">
+      <span class="brand-wordmark">Hear the <span class="accent">Difference</span></span>
+      <svg class="brand-wave" viewBox="0 0 200 20" aria-hidden="true">
+        <path d="M0,10 Q12,2 24,10 T48,10 T72,10 T96,10 T120,10 T144,10 T168,10 T200,10"
+              fill="none" stroke="url(#brandGradient)" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <h2 class="screen-heading">Class Dashboard</h2>
+    <p class="screen-tagline">
+      <span class="mastery-dot inline"></span> not yet ·
+      <span class="mastery-dot inline progress"></span> in progress (1–2 @ 80%+) ·
+      <span class="mastery-dot inline mastered"></span> mastered (3+ @ 80%+)
+    </p>
+    <div class="dashboard-table" id="dashboard-table"></div>
+    <div class="screen-actions">
+      <button id="dashboard-add" class="btn-pp-primary">+ Add Student</button>
+      <button id="dashboard-back" class="btn-quiet">← Back to Students</button>
+    </div>
+  </section>
+
+  <!-- GRADE-BAND SELECT (first launch) -->
+  <section id="grade-select" class="screen">
+    <h1>Welcome!</h1>
+    <p>What grade are you in?</p>
+    <div class="grade-grid">
+      <button class="grade-card" data-grade="junior">
+        <span class="icon">🐼</span>
+        <span class="label">K – 2nd Grade</span>
+        <span class="sub">Friendly characters &amp; stickers</span>
+      </button>
+      <button class="grade-card" data-grade="pro">
+        <span class="icon">⚡</span>
+        <span class="label">3rd – 5th Grade</span>
+        <span class="sub">XP, combos &amp; achievements</span>
+      </button>
+    </div>
+    <button id="grade-select-back" class="btn btn-ghost" style="margin-top:14px;">Cancel</button>
+  </section>
+
+  <!-- AVATAR / SIGIL SELECT (first launch) -->
+  <section id="avatar-select" class="screen">
+    <h1 id="avatar-title">Pick Your Buddy!</h1>
+    <p id="avatar-subtitle">This will be your character.</p>
+    <div class="avatar-grid" id="avatar-grid"></div>
+    <div style="display:flex; gap:12px; flex-wrap:wrap; justify-content:center;">
+      <button id="avatar-back" class="btn btn-ghost">← Back</button>
+      <button id="avatar-confirm" class="btn btn-primary" disabled>Let's Go!</button>
+    </div>
+  </section>
+
+  <!-- STICKER BOOK -->
+  <section id="sticker-book" class="screen">
+    <h1>My Sticker Book</h1>
+    <p id="sticker-count" style="font-size:20px; color:#6b7280;"></p>
+    <div class="sticker-grid" id="sticker-grid"></div>
+    <button class="btn btn-ghost" onclick="showScreen('home')">← Back</button>
+  </section>
+
+  <!-- HOME -->
+  <section id="home" class="screen active">
+    <h1>Hear the Difference</h1>
+    <p>Listen to two patterns. Are they the <b>same</b> or <b>different</b>?</p>
+    <div class="mode-grid">
+      <button class="mode-card" data-mode="tonal" aria-label="Pitch patterns">
+        <span class="emoji">🎵</span>
+        <span class="label">Pitch Patterns</span>
+        <span class="level-stars" id="tonal-stars"></span>
+      </button>
+      <button class="mode-card" data-mode="rhythm" aria-label="Rhythm patterns">
+        <span class="emoji">🥁</span>
+        <span class="label">Rhythm Patterns</span>
+        <span class="level-stars" id="rhythm-stars"></span>
+      </button>
+    </div>
+    <div style="display:flex; gap:14px; margin-top:20px; flex-wrap:wrap; justify-content:center;">
+      <button id="stickers-btn" class="btn btn-ghost">🌟 My Stickers</button>
+      <button id="info-btn" class="btn btn-ghost">ⓘ Teacher Notes</button>
+      <button id="settings-btn" class="btn btn-ghost">⚙️ Settings</button>
+    </div>
+  </section>
+
+  <!-- PLAY -->
+  <section id="play" class="screen">
+    <div class="progress" id="progress"></div>
+
+    <div class="pattern-strip">
+      <div class="pattern-row A" id="row-a">
+        <span class="pattern-label">Pattern A</span>
+        <div class="notes" id="notes-a" style="display:flex; gap:14px;"></div>
+      </div>
+    </div>
+
+    <div class="gap-pulse" id="gap-pulse"></div>
+
+    <div class="pattern-strip">
+      <div class="pattern-row B" id="row-b">
+        <span class="pattern-label">Pattern B</span>
+        <div class="notes" id="notes-b" style="display:flex; gap:14px;"></div>
+      </div>
+    </div>
+
+    <div class="feedback" id="feedback"></div>
+
+    <button id="listen-btn" class="btn btn-listen">▶ Listen</button>
+
+    <div class="choice-row" id="choice-row">
+      <button id="same-btn" class="btn btn-same" disabled>✓ SAME</button>
+      <button id="diff-btn" class="btn btn-diff" disabled>✗ DIFFERENT</button>
+    </div>
+
+    <div class="choice-row" id="post-answer-row" style="display:none;">
+      <button id="replay-btn" class="btn btn-ghost">🔁 Hear it again</button>
+      <button id="next-btn" class="btn btn-primary">Next →</button>
+    </div>
+
+    <button id="quit-round-btn" class="btn btn-ghost" style="margin-top:24px; font-size:20px; color:#e74c3c; border: 2px solid #e74c3c;">✕ Quit Round</button>
+  </section>
+
+  <!-- SUMMARY -->
+  <section id="summary" class="screen">
+    <h2 id="summary-title">Nice listening!</h2>
+    <div class="stars" id="summary-stars"></div>
+    <p id="summary-score"></p>
+    <p id="summary-level" style="font-size:20px; color:#4a90e2;"></p>
+    <div class="choice-row">
+      <button id="again-btn" class="btn btn-primary">Play Again</button>
+      <button id="switch-btn" class="btn btn-ghost">Switch Mode</button>
+      <button id="summary-switch-student" class="btn btn-ghost" style="display:none;">← Switch Student</button>
+    </div>
+  </section>
+
+</main>
+
+<!-- How-to-Play modal (shown on first entry to each mode) -->
+<div class="modal-backdrop" id="intro-modal">
+  <div class="modal">
+    <h2 id="intro-title">How to Play</h2>
+    <p id="intro-tagline" style="text-align:center; color:#6b7280; margin-bottom: 14px;"></p>
+    <ul style="list-style:none; padding-left:0; line-height: 1.7;">
+      <li><b>1.</b> Tap <b>▶ Listen</b>.</li>
+      <li><b>2.</b> You will hear a count-in: <b>1, 2, 3, Listen!</b></li>
+      <li><b>3.</b> Then you will hear <span style="color:#4a90e2;"><b>Pattern A</b></span> and then <span style="color:#d97f0a;"><b>Pattern B</b></span>.</li>
+      <li><b>4.</b> Tap <span style="color:#4ec97a;"><b>✓ SAME</b></span> if the two patterns match, or <span style="color:#f5a623;"><b>✗ DIFFERENT</b></span> if they don't.</li>
+      <li><b>5.</b> After you answer, tap <b>🔁 Hear it again</b> to listen one more time, then <b>Next →</b>.</li>
+    </ul>
+    <p style="text-align:center; font-size:16px; color:#6b7280; margin-top:14px;">There are 5 patterns in a round. Use headphones if you can!</p>
+    <div style="display:flex; gap:12px; flex-wrap:wrap; justify-content:center; margin-top: 14px;">
+      <button class="btn btn-ghost" id="cancel-intro">Maybe later</button>
+      <button class="btn btn-primary" id="close-intro">Start Listening</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings modal -->
+<div class="modal-backdrop" id="settings-modal">
+  <div class="modal settings-modal">
+    <h2 style="text-align:center; margin: 0 0 6px 0;">Settings</h2>
+    <p style="text-align:center; margin: 0 0 22px 0; color: var(--muted); font-size: 14px;">Manage this student's profile and your account.</p>
+
+    <div class="settings-section">
+      <div class="settings-section-label">Student profile</div>
+      <button id="settings-change-avatar" class="btn-quiet settings-btn">Change Avatar</button>
+      <button id="settings-change-grade" class="btn-quiet settings-btn">Change Grade Level</button>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-label">Account</div>
+      <button id="settings-signout" class="btn-quiet settings-btn">Sign Out</button>
+      <button id="settings-reset" class="btn-quiet settings-btn danger">Reset Local Data</button>
+    </div>
+
+    <button class="btn-auth modal-close" id="close-settings" style="margin-top: 18px;">Close</button>
+  </div>
+</div>
+
+<!-- Teacher notes modal -->
+<div class="modal-backdrop" id="info-modal">
+  <div class="modal">
+    <h2>Teacher Notes</h2>
+    <p><b>Skill targeted:</b> Aural discrimination of short tonal and rhythmic patterns — a foundational audiation skill.</p>
+    <ul>
+      <li><b>Pitch Patterns:</b> pentatonic (C–D–E–G–A); patterns grow from 3 to 6 notes; later levels add an octave leap.</li>
+      <li><b>Rhythm Patterns:</b> steady tempo; patterns grow from 3 to 6 beats; later levels introduce eighth-note subdivisions and faster tempo.</li>
+      <li><b>Adapts automatically:</b> advance after 4 of 5 correct; drops a level after 2 of 3 recent misses.</li>
+      <li><b>Stars:</b> 5/5 = ⭐⭐⭐, 3–4/5 = ⭐⭐, 0–2/5 = ⭐. Progress saves to this device only.</li>
+      <li><b>No notation, no reading</b> — purely aural. Headphones recommended in classroom settings.</li>
+    </ul>
+    <button class="btn btn-primary modal-close" id="close-info">Got it</button>
+  </div>
+</div>
+
+<!-- Supabase JS client (CDN) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<script>
+/* =========================================================
+   Supabase configuration
+   - The publishable key is safe in client code; Row-Level Security
+     on the database enforces actual permissions.
+   ========================================================= */
+const SUPABASE_URL = 'https://hwprhdxdusjrxknchnkc.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_ihcXXcosmUolAcOf_lIVkw_PCPhgELj';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+</script>
+
+<script>
+/* =========================================================
+   CORE LOGIC
+   - audio: WebAudio synthesis (no external files)
+   - patterns: pentatonic pitches (tonal) or beat/rest (rhythm)
+   - "different" pairs alter exactly ONE element in pattern B
+   - adaptive level: advance on 4/5 correct, drop on 2/3 misses
+   - persistence: localStorage per mode
+   To tweak: edit LEVELS, PITCHES, or scoring rules below.
+   ========================================================= */
+
+  const LS_KEY = 'patternplay.v1';
+
+  // Pentatonic frequencies (Hz): C4 D4 E4 G4 A4 (and C5 for level 5 leap)
+  const PITCHES   = [261.63, 293.66, 329.63, 392.00, 440.00];
+  const PITCH_HI  = 523.25; // C5
+
+  // Per-level config (1-indexed via array)
+  // Each level controls difficulty of the alteration itself, not just length/tempo.
+  //   changeWindow: which indices the alteration is allowed to occur in
+  //                 'last1' = only last element; 'last2' = last two; 'any' = any index
+  //   minPitchSteps: minimum scale-step distance between original and substituted pitch
+  // FUTURE CONTENT (parked): uneven meters (5/8, 7/8), elongations (held notes / variable durations)
+  // changeWindow: 'last1' | 'last2' | 'any'  — where the alteration can occur
+  // minPitchSteps: minimum scale-step distance for tonal substitutions
+  // subdiv: rhythm patterns use eighth-note subdivisions (twice as many units as beats)
+  // weakBeatFlip: rhythm flips biased to off-beat "and-of" positions (only meaningful when subdiv is true)
+  const LEVELS = [
+    null,
+    { len: 4, bpm: 80,  subdiv: false, leap: false, changeWindow: 'last1', minPitchSteps: 2, weakBeatFlip: false },
+    { len: 5, bpm: 80,  subdiv: false, leap: false, changeWindow: 'last2', minPitchSteps: 2, weakBeatFlip: false },
+    { len: 6, bpm: 90,  subdiv: false, leap: false, changeWindow: 'any',   minPitchSteps: 1, weakBeatFlip: false },
+    { len: 6, bpm: 100, subdiv: true,  leap: false, changeWindow: 'any',   minPitchSteps: 1, weakBeatFlip: false },
+    { len: 6, bpm: 110, subdiv: true,  leap: true,  changeWindow: 'any',   minPitchSteps: 1, weakBeatFlip: true  },
+  ];
+  const MAX_LEVEL = LEVELS.length - 1;
+  const TRIALS_PER_ROUND = 5;
+
+  // ---------- State ----------
+  // root = top-level persisted shape; state = pointer to active student profile.
+  // Per-student fields (tonalLevel, avatar, stickers, etc.) live on `state` and saving
+  // the root persists everything because state is a reference into root.students.
+  let root = loadRoot();
+  let state = currentStudent();    // null until a student is active
+  let roundStartTime = 0;
+  let audioCtx = null;
+  let currentMode = null;       // 'tonal' | 'rhythm'
+  let currentLevel = 1;
+  let trialIndex = 0;
+  let trialResults = [];        // booleans this round
+  let currentTrial = null;      // { patternA, patternB, same, tempo }
+  let canAnswer = false;
+  let isPlaying = false;
+
+  // ---------- Persistence ----------
+  function studentDefaults() {
+    return {
+      tonalLevel: 1, rhythmLevel: 1, tonalRecent: [], rhythmRecent: [],
+      avatar: null, stickers: [], streak: 0, lastPlayedDate: null,
+      gradeBand: null, score: 0, xpInLevel: 0,
+      dailyStreakCount: 0, dailyStreakLastDate: null,
+      introSeen: { tonal: false, rhythm: false },
+      rounds: []
+    };
+  }
+  function makeStudent({ name, gradeBand = null, avatar = null }) {
+    return Object.assign(studentDefaults(), {
+      id: crypto.randomUUID(),
+      name, gradeBand, avatar
+    });
+  }
+  function loadRoot() {
+    const defaults = {
+      setupMode: null, teacherPin: null,
+      activeStudentId: null, students: []
+    };
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return defaults;
+      const parsed = JSON.parse(raw);
+      // Migrate old single-user shape → wrap as one student named "Player 1"
+      if (parsed.students === undefined && parsed.tonalLevel !== undefined) {
+        const migrated = Object.assign(studentDefaults(), parsed, {
+          id: 's_migrated', name: 'Player 1'
+        });
+        return { setupMode: 'single', teacherPin: null,
+                 activeStudentId: migrated.id, students: [migrated] };
+      }
+      return Object.assign(defaults, parsed);
+    } catch(e) { return defaults; }
+  }
+  function saveState() {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(root)); } catch(e) {}
+  }
+  function currentStudent() {
+    if (!root.activeStudentId) return null;
+    return root.students.find(s => s.id === root.activeStudentId) || null;
+  }
+  function setActiveStudent(id) {
+    root.activeStudentId = id;
+    state = currentStudent();
+    saveState();
+  }
+  function addStudent(props) {
+    const s = makeStudent(props);
+    root.students.push(s);
+    saveState();
+    syncStudent(s).catch(e => console.error('addStudent sync failed', e));
+    return s;
+  }
+  // Mastery: ≥3 rounds at a level with ≥80% accuracy = mastered; 1–2 such rounds = in progress.
+  function masteryFor(student, mode) {
+    const out = {};
+    for (let lvl = 1; lvl <= MAX_LEVEL; lvl++) {
+      const qualifying = (student.rounds || []).filter(r =>
+        r.mode === mode && r.level === lvl && (r.correct / r.total) >= 0.8
+      );
+      out[lvl] = qualifying.length >= 3 ? 'mastered'
+               : qualifying.length >= 1 ? 'progress'
+               : 'none';
+    }
+    return out;
+  }
+  // ---------- Cloud sync (Supabase) ----------
+  // Map between local camelCase student shape and DB snake_case columns.
+  function studentToRow(s, teacherId) {
+    return {
+      id: s.id,
+      teacher_id: teacherId,
+      name: s.name,
+      grade_band: s.gradeBand,
+      avatar: s.avatar,
+      tonal_level: s.tonalLevel || 1,
+      rhythm_level: s.rhythmLevel || 1,
+      stickers: s.stickers || [],
+      daily_streak_count: s.dailyStreakCount || 0,
+      daily_streak_last_date: s.dailyStreakLastDate || null,
+      intro_seen: s.introSeen || { tonal: false, rhythm: false }
+    };
+  }
+  function rowToStudent(r, allRounds) {
+    return Object.assign(studentDefaults(), {
+      id: r.id,
+      name: r.name,
+      gradeBand: r.grade_band,
+      avatar: r.avatar,
+      tonalLevel: r.tonal_level || 1,
+      rhythmLevel: r.rhythm_level || 1,
+      stickers: r.stickers || [],
+      dailyStreakCount: r.daily_streak_count || 0,
+      dailyStreakLastDate: r.daily_streak_last_date,
+      introSeen: r.intro_seen || { tonal: false, rhythm: false },
+      rounds: (allRounds || []).filter(x => x.student_id === r.id).map(x => ({
+        mode: x.mode, level: x.level, correct: x.correct, total: x.total,
+        ms: x.duration_ms, date: x.played_at
+      }))
+    });
+  }
+  async function currentUserId() {
+    const { data: { user } } = await sb.auth.getUser();
+    return user ? user.id : null;
+  }
+  async function syncStudent(student) {
+    const uid = await currentUserId();
+    if (!uid) return;
+    const { error } = await sb.from('students').upsert(studentToRow(student, uid));
+    if (error) console.error('syncStudent error:', error);
+  }
+  async function syncRound(round, studentId) {
+    const { error } = await sb.from('rounds').insert({
+      student_id: studentId,
+      mode: round.mode, level: round.level,
+      correct: round.correct, total: round.total,
+      duration_ms: round.ms,
+      played_at: round.date
+    });
+    if (error) console.error('syncRound error:', error);
+  }
+  async function loadFromCloud() {
+    const { data: students, error: e1 } = await sb.from('students').select('*').order('created_at');
+    if (e1) { console.error('loadFromCloud students error:', e1); return; }
+    const { data: rounds, error: e2 } = await sb.from('rounds').select('*').order('played_at');
+    if (e2) console.error('loadFromCloud rounds error:', e2);
+    root.students = (students || []).map(r => rowToStudent(r, rounds));
+    if (!root.students.find(s => s.id === root.activeStudentId)) root.activeStudentId = null;
+    state = currentStudent();
+    saveState();
+  }
+  async function migrateLocalToCloud() {
+    if (!root.students || root.students.length === 0) return;
+    // If cloud already has students for this teacher, skip migration.
+    const { data: existing } = await sb.from('students').select('id').limit(1);
+    if (existing && existing.length > 0) return;
+    // Upload each local student with a fresh UUID; remap their round records.
+    for (const s of root.students) {
+      const newId = crypto.randomUUID();
+      const oldRounds = s.rounds || [];
+      s.id = newId;
+      await syncStudent(s);
+      for (const r of oldRounds) {
+        await syncRound(r, newId);
+      }
+    }
+    root.activeStudentId = null;
+    state = null;
+    saveState();
+  }
+  // Called after sign-in OR sign-up: migrate then load cloud state.
+  async function afterSignIn() {
+    root.setupMode = 'class';
+    saveState();
+    try {
+      await migrateLocalToCloud();
+      await loadFromCloud();
+    } catch(e) { console.error('post-signin sync error:', e); }
+    showScreen('student-select');
+  }
+
+  // Session-scoped flags (not persisted)
+  const session = { modesPlayed: new Set() };
+
+  // ---------- Avatar / Sigil pools ----------
+  const JUNIOR_AVATARS = ['🦊','🐼','🐸','🦁','🐧','🦄'];
+  const PRO_SIGILS     = ['◆','▲','●','★','✦','⬢'];
+  function avatarPool() { return state.gradeBand === 'pro' ? PRO_SIGILS : JUNIOR_AVATARS; }
+
+  function renderAvatarGrid() {
+    const grid = document.getElementById('avatar-grid');
+    grid.innerHTML = '';
+    document.getElementById('avatar-title').textContent =
+      state.gradeBand === 'pro' ? 'Choose Your Sigil' : 'Pick Your Buddy!';
+    document.getElementById('avatar-subtitle').textContent =
+      state.gradeBand === 'pro' ? 'This is your mark.' : 'This will be your character.';
+    avatarPool().forEach(av => {
+      const b = document.createElement('button');
+      b.className = 'avatar-card';
+      b.dataset.avatar = av;
+      b.textContent = av;
+      b.addEventListener('click', () => {
+        document.querySelectorAll('.avatar-card').forEach(c => c.classList.remove('selected'));
+        b.classList.add('selected');
+        pendingAvatar = av;
+        document.getElementById('avatar-confirm').disabled = false;
+      });
+      grid.appendChild(b);
+    });
+    pendingAvatar = null;
+    document.getElementById('avatar-confirm').disabled = true;
+  }
+
+  // ---------- Daily streak (Duolingo-style) ----------
+  function updateDailyStreak() {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const last = state.dailyStreakLastDate ? new Date(state.dailyStreakLastDate) : null;
+    if (!last) {
+      state.dailyStreakCount = 1;
+    } else {
+      const diffDays = Math.round((today - last) / 86400000);
+      if (diffDays === 0) return; // already counted today
+      if (diffDays === 1) state.dailyStreakCount += 1;
+      else state.dailyStreakCount = 1; // missed a day → reset
+    }
+    state.dailyStreakLastDate = today.toISOString();
+    saveState();
+  }
+
+  // ---------- HUD (Pro mode) ----------
+  const XP_PER_LEVEL = 5;
+  function updateHUD() {
+    if (state.gradeBand !== 'pro') return;
+    const pct = Math.min(100, (state.xpInLevel / XP_PER_LEVEL) * 100);
+    document.getElementById('xp-fill').style.width = pct + '%';
+    document.getElementById('score-value').textContent = state.score.toLocaleString();
+    const comboBlock = document.getElementById('hud-combo');
+    if ((state.streak || 0) >= 2) {
+      comboBlock.style.visibility = 'visible';
+      document.getElementById('combo-value').textContent = '×' + state.streak;
+    } else {
+      comboBlock.style.visibility = 'hidden';
+    }
+  }
+  function flashComboBanner(text) {
+    const el = document.getElementById('combo-banner');
+    el.textContent = text;
+    el.classList.add('show');
+    if (audioCtx) {
+      const t = audioCtx.currentTime;
+      [659.25, 783.99, 987.77].forEach((f, i) => playTone(f, t + i * 0.07, 0.15));
+    }
+    setTimeout(() => el.classList.remove('show'), 1100);
+  }
+  function flashLevelUp() {
+    const el = document.getElementById('levelup-overlay');
+    el.classList.add('show');
+    if (audioCtx) {
+      const t = audioCtx.currentTime;
+      [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => playTone(f, t + i * 0.08, 0.22));
+    }
+    setTimeout(() => el.classList.remove('show'), 1600);
+  }
+
+  // ---------- Stickers ----------
+  const STICKERS = [
+    { id: 'first',    icon: '👂', name: 'First Listen',  desc: 'Completed your first pattern!' },
+    { id: 'streak5',  icon: '🔥', name: 'On Fire',        desc: '5 correct in a row.' },
+    { id: 'levelup',  icon: '⬆️', name: 'Level Up',       desc: 'Advanced to a new level.' },
+    { id: 'daily',    icon: '📅', name: 'Daily Listener', desc: 'Played on a new day.' },
+    { id: 'both',     icon: '🎵', name: 'All-Around Ear', desc: 'Played pitch AND rhythm.' },
+    { id: 'maestro',  icon: '🏆', name: 'Maestro',        desc: 'Reached the top level!' },
+  ];
+
+  function awardSticker(id) {
+    if (state.stickers.includes(id)) return;
+    state.stickers.push(id);
+    saveState();
+    const sticker = STICKERS.find(s => s.id === id);
+    if (!sticker) return;
+    const toast = document.getElementById('toast');
+    document.getElementById('toast-icon').textContent = sticker.icon;
+    document.getElementById('toast-name').textContent = sticker.name;
+    toast.classList.add('show');
+    // little celebratory chime
+    if (audioCtx) {
+      const t = audioCtx.currentTime;
+      [523.25, 659.25, 783.99].forEach((f, i) => playTone(f, t + i * 0.12, 0.20));
+    }
+    setTimeout(() => toast.classList.remove('show'), 2200);
+  }
+
+  function renderStickerBook() {
+    const grid = document.getElementById('sticker-grid');
+    grid.innerHTML = '';
+    STICKERS.forEach(s => {
+      const owned = state.stickers.includes(s.id);
+      const div = document.createElement('div');
+      div.className = 'sticker' + (owned ? '' : ' locked');
+      div.innerHTML = `
+        <div class="icon">${owned ? s.icon : '🔒'}</div>
+        <div class="name">${owned ? s.name : '???'}</div>
+        <div class="desc">${owned ? s.desc : 'Keep playing to unlock!'}</div>
+      `;
+      grid.appendChild(div);
+    });
+    document.getElementById('sticker-count').textContent =
+      `${state.stickers.length} of ${STICKERS.length} collected`;
+  }
+
+  // ---------- Mascot (Echo the owl) ----------
+  const ENCOURAGE_CORRECT = [
+    'Echo heard it too!',
+    'Great listening!',
+    'Your ears are working hard!',
+    'You noticed the difference!',
+    'Nice ear training!',
+    'Echo is proud!',
+  ];
+  const ENCOURAGE_INCORRECT = [
+    'Tricky one! Let\'s try again.',
+    'Listening is hard work — keep going!',
+    'Echo missed that one too sometimes.',
+    'Your ears are getting stronger.',
+    'Almost! Listen for one little change.',
+  ];
+  function echoSay(text, cheer = false) {
+    const m = document.getElementById('mascot');
+    const b = document.getElementById('mascot-bubble');
+    b.textContent = text;
+    m.style.display = 'flex';
+    m.classList.add('show');
+    if (cheer) m.classList.add('cheer');
+    setTimeout(() => m.classList.remove('cheer'), 700);
+  }
+  function echoHide() {
+    document.getElementById('mascot').classList.remove('show');
+  }
+  function pickRandom(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+  // ---------- Audio ----------
+  let scheduledNodes = [];
+  let playbackCancelled = false;
+  function trackNode(n) { scheduledNodes.push(n); }
+  function cancelAllAudio() {
+    playbackCancelled = true;
+    scheduledNodes.forEach(n => { try { n.stop(0); } catch(e) {} });
+    scheduledNodes = [];
+  }
+
+  async function ensureAudio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    // Safari requires the resume() promise to actually resolve before
+    // scheduled audio will play. Awaiting fixes the "no sound in Safari" bug.
+    if (audioCtx.state === 'suspended') {
+      try { await audioCtx.resume(); } catch (e) { console.error('resume failed', e); }
+    }
+  }
+
+  function playTone(freq, startTime, duration) {
+    const osc  = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.value = freq;
+    // Safari note: starting gain at exact 0 can cause silent playback.
+    // Use a tiny non-zero floor so linear ramps engage reliably.
+    gain.gain.setValueAtTime(0.0001, startTime);
+    gain.gain.linearRampToValueAtTime(0.35, startTime + 0.02);
+    gain.gain.linearRampToValueAtTime(0.30, startTime + duration * 0.6);
+    gain.gain.linearRampToValueAtTime(0.0001, startTime + duration);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(startTime);
+    osc.stop(startTime + duration + 0.05);
+    trackNode(osc);
+  }
+
+  function playClick(startTime) {
+    // Percussive pitched click — works reliably on iOS Safari where the older
+    // AudioBufferSource + bandpass-filter path can render silently on iPhone speakers.
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1400, startTime);
+    osc.frequency.exponentialRampToValueAtTime(700, startTime + 0.06);
+    gain.gain.setValueAtTime(0.0001, startTime);
+    gain.gain.exponentialRampToValueAtTime(0.7, startTime + 0.004);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.09);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(startTime);
+    osc.stop(startTime + 0.12);
+    trackNode(osc);
+  }
+
+  function playFeedback(correct) {
+    const t = audioCtx.currentTime;
+    if (correct) {
+      // Rising 2-note chime
+      playTone(523.25, t,        0.18);
+      playTone(659.25, t + 0.16, 0.22);
+    } else {
+      // Gentle low blip
+      playTone(220, t, 0.25);
+    }
+  }
+
+  // ---------- Pattern generation ----------
+  function generateTonalPattern(level) {
+    const cfg = LEVELS[level];
+    const pool = cfg.leap ? PITCHES.concat([PITCH_HI]) : PITCHES;
+    const arr = [];
+    for (let i = 0; i < cfg.len; i++) {
+      arr.push(pool[Math.floor(Math.random() * pool.length)]);
+    }
+    return arr; // array of frequencies
+  }
+  function generateRhythmPattern(level) {
+    const cfg = LEVELS[level];
+    const units = cfg.subdiv ? cfg.len * 2 : cfg.len;
+    const arr = [];
+    // Ensure at least one click and one rest for interest
+    for (let i = 0; i < units; i++) arr.push(Math.random() < 0.65 ? 1 : 0);
+    if (!arr.includes(1)) arr[0] = 1;
+    if (!arr.includes(0)) arr[arr.length - 1] = 0;
+    return arr; // array of 1 (click) or 0 (rest)
+  }
+  // Indices eligible for alteration, based on the level's changeWindow.
+  function eligibleIndices(len, window) {
+    if (window === 'last1') return [len - 1];
+    if (window === 'last2') return [len - 2, len - 1];
+    return Array.from({length: len}, (_, i) => i);
+  }
+
+  function alterPattern(pattern, mode, level) {
+    const out = pattern.slice();
+    const cfg = LEVELS[level];
+    const eligible = eligibleIndices(out.length, cfg.changeWindow).sort(() => Math.random() - 0.5);
+
+    if (mode === 'tonal') {
+      const pool = cfg.leap ? PITCHES.concat([PITCH_HI]) : PITCHES;
+      const minSteps = cfg.minPitchSteps || 1;
+      for (const idx of eligible) {
+        const origIdx = pool.indexOf(out[idx]);
+        // Candidate pitches at least minSteps scale-steps from the original
+        const candidates = pool.filter((_, i) => Math.abs(i - origIdx) >= minSteps);
+        if (candidates.length === 0) continue;
+        out[idx] = candidates[Math.floor(Math.random() * candidates.length)];
+        return out;
+      }
+      // Fallback: if no candidate satisfied minSteps, just substitute any different pitch at last index.
+      const idx = out.length - 1;
+      const origIdx = pool.indexOf(out[idx]);
+      const others = pool.filter((_, i) => i !== origIdx);
+      out[idx] = others[Math.floor(Math.random() * others.length)];
+      return out;
+    } else {
+      // Rhythm: optionally bias the flip toward metrically weak positions ("and-of" eighth-notes).
+      // With subdiv on, units run as [down, and, down, and, ...] — odd indices are weak beats.
+      let candidates = eligible.slice();
+      if (cfg.weakBeatFlip && cfg.subdiv) {
+        const weak = candidates.filter(i => i % 2 === 1);
+        if (weak.length) candidates = weak;
+      }
+      for (const idx of candidates) {
+        const trial = out.slice();
+        trial[idx] = 1 - trial[idx];
+        if (trial.includes(1)) {
+          out[idx] = trial[idx];
+          return out;
+        }
+      }
+      // Fallback: flip any index that keeps a click in the pattern.
+      const all = Array.from({length: out.length}, (_, i) => i).sort(() => Math.random() - 0.5);
+      for (const idx of all) {
+        const trial = out.slice();
+        trial[idx] = 1 - trial[idx];
+        if (trial.includes(1)) { out[idx] = trial[idx]; return out; }
+      }
+      return out;
+    }
+  }
+
+  function buildTrial() {
+    const same = Math.random() < 0.5;
+    let patternA, patternB;
+    if (currentMode === 'tonal') {
+      patternA = generateTonalPattern(currentLevel);
+      patternB = same ? patternA.slice() : alterPattern(patternA, 'tonal', currentLevel);
+    } else {
+      patternA = generateRhythmPattern(currentLevel);
+      patternB = same ? patternA.slice() : alterPattern(patternA, 'rhythm', currentLevel);
+    }
+    const cfg = LEVELS[currentLevel];
+    // Tempo: for rhythm in subdiv mode, each unit is an eighth note
+    const unitMs = cfg.subdiv && currentMode === 'rhythm'
+      ? 60000 / cfg.bpm / 2
+      : (currentMode === 'tonal' ? 500 : 60000 / cfg.bpm);
+    return { patternA, patternB, same, unitMs };
+  }
+
+  // ---------- Rendering ----------
+  function renderHome() {
+    document.getElementById('tonal-stars').textContent  = '⭐'.repeat(state.tonalLevel);
+    document.getElementById('rhythm-stars').textContent = '⭐'.repeat(state.rhythmLevel);
+    // Daily streak chip on home
+    const home = document.getElementById('home');
+    let chip = document.getElementById('streak-chip');
+    if (state.dailyStreakCount > 0) {
+      if (!chip) {
+        chip = document.createElement('div');
+        chip.id = 'streak-chip';
+        chip.className = 'streak-chip';
+        home.insertBefore(chip, home.children[2]);
+      }
+      chip.innerHTML = `🔥 ${state.dailyStreakCount}-day streak`;
+    } else if (chip) {
+      chip.remove();
+    }
+    // Pro-mode home labels
+    const h1 = home.querySelector('h1');
+    if (state.gradeBand === 'pro') {
+      h1.textContent = 'HEAR THE DIFFERENCE';
+      document.querySelector('#stickers-btn').innerHTML = '🏆 Achievements';
+    } else {
+      h1.textContent = 'Hear the Difference';
+      document.querySelector('#stickers-btn').innerHTML = '🌟 My Stickers';
+    }
+  }
+
+  // Placeholder render: just neutral count of dots, no pitch / rest reveal yet.
+  function renderPatternStripPlaceholder(patternId, pattern, which) {
+    const container = document.getElementById(patternId);
+    container.innerHTML = '';
+    pattern.forEach((_, i) => {
+      const d = document.createElement('div');
+      d.className = `note ${which} placeholder`;
+      d.dataset.index = i;
+      container.appendChild(d);
+    });
+  }
+
+  // During first playback, only show timing — DO NOT reveal pitch height or rest/click,
+  // since that would let students answer by sight instead of by ear.
+  function revealNote(patternId, pattern, mode, which, i) {
+    const container = document.getElementById(patternId);
+    const node = container.children[i];
+    if (!node) return;
+    node.classList.remove('placeholder');
+  }
+
+  // After the student answers, reveal the true visual shape so replay = real learning.
+  function fullRevealRow(patternId, pattern, mode) {
+    const container = document.getElementById(patternId);
+    pattern.forEach((val, i) => {
+      const node = container.children[i];
+      if (!node) return;
+      node.classList.remove('placeholder');
+      if (mode === 'tonal') {
+        const pool = LEVELS[currentLevel].leap ? PITCHES.concat([PITCH_HI]) : PITCHES;
+        const idx = pool.indexOf(val);
+        const offset = (pool.length - 1 - idx) * 18;
+        node.style.transform = `translateY(${offset - 36}px)`;
+      } else {
+        if (val === 0) node.classList.add('rest');
+        else node.classList.remove('rest');
+      }
+    });
+  }
+
+  function renderProgress() {
+    const wrap = document.getElementById('progress');
+    wrap.innerHTML = '';
+    for (let i = 0; i < TRIALS_PER_ROUND; i++) {
+      const dot = document.createElement('div');
+      dot.className = 'dot';
+      if (i < trialResults.length) {
+        dot.classList.add(trialResults[i] ? 'correct' : 'incorrect');
+      }
+      wrap.appendChild(dot);
+    }
+  }
+
+  function updateLevelPill() {
+    const pill = document.getElementById('level-pill');
+    pill.style.display = 'block';
+    pill.textContent = `Level ${currentLevel}`;
+  }
+
+  // ---------- Playback ----------
+  async function playPattern(pattern, mode, which, unitMs) {
+    const patternId = which === 'A' ? 'notes-a' : 'notes-b';
+    const startCtx = audioCtx.currentTime + 0.08;
+    pattern.forEach((val, i) => {
+      const t = startCtx + (i * unitMs) / 1000;
+      if (mode === 'tonal') {
+        playTone(val, t, Math.min(0.45, unitMs/1000 * 0.85));
+      } else if (val === 1) {
+        playClick(t);
+      }
+    });
+    // Visual sync: reveal + glow each note AT its audio onset (not after the wait)
+    for (let i = 0; i < pattern.length; i++) {
+      if (playbackCancelled) return;
+      revealNote(patternId, pattern, mode, which, i);
+      const node = document.getElementById(patternId).children[i];
+      if (node) {
+        node.classList.add('active');
+        setTimeout(() => node.classList.remove('active'), Math.min(380, unitMs * 0.7));
+      }
+      await wait(unitMs);
+    }
+  }
+
+  // Tonal-context priming: arpeggiate C-major tonic chord (C-E-G-C) before tonal patterns.
+  // Establishes tonality so kids can audiate within a key, per Gordon's MLT.
+  async function tonalPrime() {
+    const fb = document.getElementById('feedback');
+    fb.className = 'feedback';
+    fb.innerHTML = '<span class="word" style="color:#7b61ff;">Warm up your ears…</span>';
+    const t0 = audioCtx.currentTime + 0.05;
+    const chord = [261.63, 329.63, 392.00, 523.25]; // C E G C
+    chord.forEach((f, i) => playTone(f, t0 + i * 0.22, 0.30));
+    await wait(chord.length * 220 + 200);
+    fb.innerHTML = '';
+  }
+
+  // Audio + visual count-in before a pattern plays (especially helpful for rhythm)
+  async function countIn(unitMs) {
+    const fb = document.getElementById('feedback');
+    const labels = ['1', '2', '3', 'Listen!'];
+    for (let i = 0; i < 4; i++) {
+      if (playbackCancelled) return;
+      const t = audioCtx.currentTime + 0.02;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'square';
+      osc.frequency.value = (i === 3) ? 2000 : 1600; // accent the last beat
+      gain.gain.setValueAtTime(i === 3 ? 0.22 : 0.15, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(t); osc.stop(t + 0.09);
+      fb.className = 'feedback';
+      fb.innerHTML = `<span class="word" style="color:#7b61ff;">${labels[i]}</span>`;
+      await wait(unitMs);
+    }
+    fb.innerHTML = '';
+  }
+  function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  async function runTrialPlayback() {
+    if (isPlaying) return;
+    playbackCancelled = false;
+    isPlaying = true;
+    canAnswer = false;
+    setChoiceEnabled(false);
+    document.getElementById('listen-btn').disabled = true;
+    document.getElementById('feedback').innerHTML = '';
+
+    renderPatternStripPlaceholder('notes-a', currentTrial.patternA, 'A');
+    renderPatternStripPlaceholder('notes-b', currentTrial.patternB, 'B');
+
+    const rowA = document.getElementById('row-a');
+    const rowB = document.getElementById('row-b');
+    rowA.classList.remove('playing','done');
+    rowB.classList.remove('playing','done');
+
+    await countIn(Math.max(420, currentTrial.unitMs));
+
+    rowA.classList.add('playing');
+    await playPattern(currentTrial.patternA, currentMode, 'A', currentTrial.unitMs);
+    rowA.classList.remove('playing');
+    rowA.classList.add('done');
+
+    // brief visual pause, then 4-beat count-in before Pattern B (symmetric with A)
+    const pulse = document.getElementById('gap-pulse');
+    pulse.classList.add('active');
+    await wait(500);
+    pulse.classList.remove('active');
+    await countIn(Math.max(420, currentTrial.unitMs));
+
+    rowB.classList.add('playing');
+    await playPattern(currentTrial.patternB, currentMode, 'B', currentTrial.unitMs);
+    rowB.classList.remove('playing');
+    rowB.classList.add('done');
+
+    // Clear "your turn" prompt
+    const fb = document.getElementById('feedback');
+    fb.className = 'feedback';
+    fb.innerHTML = '<span class="word" style="color:#7b61ff;">Same or different?</span>';
+
+    canAnswer = true;
+    setChoiceEnabled(true);
+    document.getElementById('listen-btn').disabled = false;
+    isPlaying = false;
+  }
+
+  function setChoiceEnabled(on) {
+    document.getElementById('same-btn').disabled = !on;
+    document.getElementById('diff-btn').disabled = !on;
+  }
+
+  // ---------- Answer & adaptation ----------
+  function answer(saidSame) {
+    if (!canAnswer) return;
+    canAnswer = false;
+    setChoiceEnabled(false);
+    document.getElementById('listen-btn').disabled = true;
+
+    const correct = (saidSame === currentTrial.same);
+    trialResults.push(correct);
+
+    // Streak + Pro-mode scoring
+    if (correct) {
+      state.streak = (state.streak || 0) + 1;
+      if (state.gradeBand === 'pro') {
+        const multiplier = Math.min(5, Math.max(1, state.streak));
+        state.score += 10 * multiplier;
+        state.xpInLevel = (state.xpInLevel || 0) + 1;
+        updateHUD();
+        // Combo milestone banners
+        if (state.streak === 3) flashComboBanner('×3 COMBO!');
+        else if (state.streak === 5) flashComboBanner('×5 ON FIRE!');
+        else if (state.streak === 10) flashComboBanner('×10 LEGEND!');
+      }
+    } else {
+      state.streak = 0;
+      if (state.gradeBand === 'pro') updateHUD();
+    }
+    saveState();
+    // Stickers awarded AFTER feedback resolves (delayed below), and "first" only on first CORRECT answer
+
+    // feedback visual + sound + mascot
+    const fb = document.getElementById('feedback');
+    fb.className = 'feedback ' + (correct ? 'correct' : 'incorrect');
+    fb.innerHTML = correct
+      ? '<span>✅</span><span class="word">Yes!</span>'
+      : `<span>❌</span><span class="word">It was ${currentTrial.same ? 'SAME' : 'DIFFERENT'}</span>`;
+    playFeedback(correct);
+    if (state.gradeBand !== 'pro') {
+      echoSay(pickRandom(correct ? ENCOURAGE_CORRECT : ENCOURAGE_INCORRECT), correct);
+    }
+
+    renderProgress();
+
+    // Award stickers only after the kid sees their answer was correct.
+    if (correct) {
+      setTimeout(() => {
+        awardSticker('first');
+        if (state.streak >= 5) awardSticker('streak5');
+      }, 800);
+    }
+
+    // Now that the answer is in, reveal the true shape of both patterns for the replay/review.
+    fullRevealRow('notes-a', currentTrial.patternA, currentMode);
+    fullRevealRow('notes-b', currentTrial.patternB, currentMode);
+
+    // Show Replay / Next instead of auto-advancing — lets students hear what they missed.
+    document.getElementById('choice-row').style.display = 'none';
+    document.getElementById('post-answer-row').style.display = 'flex';
+    document.getElementById('listen-btn').style.display = 'none';
+  }
+
+  async function replayCurrentTrial() {
+    if (isPlaying) return;
+    playbackCancelled = false;
+    isPlaying = true;
+    document.getElementById('replay-btn').disabled = true;
+    document.getElementById('next-btn').disabled = true;
+    const rowA = document.getElementById('row-a');
+    const rowB = document.getElementById('row-b');
+    rowA.classList.add('playing');
+    await playPattern(currentTrial.patternA, currentMode, 'A', currentTrial.unitMs);
+    rowA.classList.remove('playing');
+    await wait(500);
+    rowB.classList.add('playing');
+    await playPattern(currentTrial.patternB, currentMode, 'B', currentTrial.unitMs);
+    rowB.classList.remove('playing');
+    document.getElementById('replay-btn').disabled = false;
+    document.getElementById('next-btn').disabled = false;
+    isPlaying = false;
+  }
+
+  function advanceTrial() {
+    document.getElementById('post-answer-row').style.display = 'none';
+    document.getElementById('choice-row').style.display = 'flex';
+    document.getElementById('listen-btn').style.display = 'inline-block';
+    trialIndex++;
+    if (trialIndex >= TRIALS_PER_ROUND) {
+      finishRound();
+    } else {
+      nextTrial();
+    }
+  }
+
+  function adaptLevel() {
+    const recentKey = currentMode === 'tonal' ? 'tonalRecent' : 'rhythmRecent';
+    const levelKey  = currentMode === 'tonal' ? 'tonalLevel'  : 'rhythmLevel';
+    // Push this round's results into rolling buffer (last 5)
+    const buf = state[recentKey].concat(trialResults).slice(-5);
+    state[recentKey] = buf;
+
+    const correctCount = buf.filter(Boolean).length;
+    const last3 = buf.slice(-3);
+    const last3Misses = last3.filter(x => !x).length;
+
+    let oldLevel = state[levelKey];
+    let newLevel = oldLevel;
+    if (buf.length >= 5 && correctCount >= 4 && oldLevel < MAX_LEVEL) {
+      newLevel = oldLevel + 1;
+      state[recentKey] = []; // reset buffer on advance
+    } else if (last3.length === 3 && last3Misses >= 2 && oldLevel > 1) {
+      newLevel = oldLevel - 1;
+      state[recentKey] = [];
+    }
+    state[levelKey] = newLevel;
+    if (newLevel > oldLevel) {
+      if (state.gradeBand === 'pro') {
+        state.xpInLevel = 0;
+        flashLevelUp();
+        updateHUD();
+      } else {
+        awardSticker('levelup');
+        if (newLevel === MAX_LEVEL) awardSticker('maestro');
+      }
+    }
+    saveState();
+    return { oldLevel, newLevel };
+  }
+
+  function finishRound() {
+    const correctCount = trialResults.filter(Boolean).length;
+    // Record this round in the student's history (drives mastery + dashboard).
+    state.rounds = state.rounds || [];
+    const newRound = {
+      mode: currentMode,
+      level: currentLevel,
+      correct: correctCount,
+      total: TRIALS_PER_ROUND,
+      date: new Date().toISOString(),
+      ms: Date.now() - roundStartTime
+    };
+    state.rounds.push(newRound);
+    saveState();
+    // Cloud sync (fire-and-forget): insert the round + upsert student stats.
+    syncRound(newRound, state.id).catch(e => console.error('syncRound failed', e));
+    const { oldLevel, newLevel } = adaptLevel();
+    syncStudent(state).catch(e => console.error('syncStudent failed', e));
+
+    // Defer daily / both-modes sticker awards to here (so they don't pop before the first pattern plays)
+    if (state.gradeBand !== 'pro') {
+      awardSticker('daily');
+      if (session.modesPlayed.size === 2) awardSticker('both');
+    }
+
+    // Render summary
+    let starCount = 1;
+    if (correctCount === 5) starCount = 3;
+    else if (correctCount >= 3) starCount = 2;
+
+    const starsEl = document.getElementById('summary-stars');
+    starsEl.innerHTML = '';
+    for (let i = 0; i < 3; i++) {
+      const s = document.createElement('span');
+      s.textContent = '★';
+      if (i >= starCount) s.className = 'dim';
+      starsEl.appendChild(s);
+    }
+    document.getElementById('summary-score').textContent =
+      `You got ${correctCount} of ${TRIALS_PER_ROUND} correct.`;
+
+    let levelMsg = '';
+    if (newLevel > oldLevel)      levelMsg = `🎉 Level up! Now on Level ${newLevel}.`;
+    else if (newLevel < oldLevel) levelMsg = `Let's practice Level ${newLevel} a bit more.`;
+    else                          levelMsg = `Still on Level ${newLevel}. Keep going!`;
+    document.getElementById('summary-level').textContent = levelMsg;
+
+    // Show "Switch Student" only in class mode
+    document.getElementById('summary-switch-student').style.display =
+      root.setupMode === 'class' ? 'inline-block' : 'none';
+    showScreen('summary');
+  }
+
+  function nextTrial() {
+    currentTrial = buildTrial();
+    renderPatternStripPlaceholder('notes-a', currentTrial.patternA, 'A');
+    renderPatternStripPlaceholder('notes-b', currentTrial.patternB, 'B');
+    document.getElementById('feedback').innerHTML = '';
+    document.getElementById('listen-btn').disabled = false;
+    setChoiceEnabled(false);
+    renderProgress();
+  }
+
+  // ---------- Round start ----------
+  function startMode(mode) {
+    currentMode = mode;
+    // Track date + modes silently — sticker awards happen at end of round (not on entry)
+    const today = new Date().toDateString();
+    state.lastPlayedDate = today;
+    session.modesPlayed.add(mode);
+    // Daily streak (consecutive-days)
+    updateDailyStreak();
+    // Reset round-level Pro state
+    state.streak = 0;
+    state.xpInLevel = 0;
+    saveState();
+
+    // Show how-to-play intro the first time this mode is opened on this device
+    state.introSeen = state.introSeen || { tonal: false, rhythm: false };
+    if (!state.introSeen[mode]) {
+      document.getElementById('intro-title').textContent =
+        mode === 'tonal' ? 'How to Play: Pitch Patterns' : 'How to Play: Rhythm Patterns';
+      document.getElementById('intro-tagline').textContent =
+        mode === 'tonal'
+          ? 'Listen to two short melodies and decide if they are the same.'
+          : 'Listen to two short rhythms and decide if they are the same.';
+      document.getElementById('intro-modal').classList.add('active');
+    }
+
+    roundStartTime = Date.now();
+    const levelKey = mode === 'tonal' ? 'tonalLevel' : 'rhythmLevel';
+    // Start one level below highest reached, min 1
+    currentLevel = Math.max(1, state[levelKey] - (state[levelKey] === MAX_LEVEL ? 0 : 0));
+    // Actually: start at current saved level — they've earned it. But on returning users we soften:
+    currentLevel = state[levelKey];
+    trialIndex = 0;
+    trialResults = [];
+    updateLevelPill();
+    nextTrial();
+    showScreen('play');
+  }
+
+  // ---------- Screens ----------
+  function showScreen(name) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(name).classList.add('active');
+
+    const backBtn = document.getElementById('back-btn');
+    const isClass = root.setupMode === 'class';
+    // Back button visibility + label:
+    // - On home in class mode: "← Switch Student" (goes to student-select)
+    // - On play/summary/sticker-book: "← Home"
+    // - On setup screens / student-select / dashboard: hidden
+    const hiddenOnBack = new Set(['auth','setup-mode','pin-setup','pin-entry','add-student','student-select','teacher-dashboard','avatar-select','grade-select']);
+    if (hiddenOnBack.has(name) || (name === 'home' && !isClass)) {
+      backBtn.style.display = 'none';
+    } else if (name === 'home' && isClass) {
+      backBtn.style.display = 'inline-block';
+      backBtn.textContent = '← Switch Student';
+    } else if (name === 'play') {
+      backBtn.style.display = 'inline-block';
+      backBtn.textContent = 'Quit Round';
+    } else {
+      backBtn.style.display = 'inline-block';
+      backBtn.textContent = '← Home';
+    }
+
+    document.getElementById('level-pill').style.display = (name === 'play') ? 'block' : 'none';
+
+    const avBtn = document.getElementById('my-avatar');
+    const showAv = state && state.avatar && !['avatar-select','student-select','setup-mode','pin-setup','pin-entry','add-student','teacher-dashboard','grade-select'].includes(name);
+    avBtn.style.display = showAv ? 'inline-block' : 'none';
+    if (state && state.avatar) avBtn.textContent = state.avatar;
+
+    // Mascot only in Junior mode
+    const gb = state ? state.gradeBand : null;
+    if (gb !== 'pro' && (name === 'play' || name === 'summary')) {
+      document.getElementById('mascot').style.display = 'flex';
+    } else {
+      echoHide();
+      document.getElementById('mascot').style.display = 'none';
+    }
+    // HUD only in Pro mode on play screen
+    const hud = document.getElementById('hud');
+    if (gb === 'pro' && name === 'play') { hud.classList.add('active'); updateHUD(); }
+    else { hud.classList.remove('active'); }
+
+    // Reset theme on neutral/teacher screens
+    const neutralScreens = ['auth','setup-mode','pin-setup','pin-entry','add-student','student-select','teacher-dashboard'];
+    if (neutralScreens.includes(name)) document.body.dataset.grade = '';
+    else if (state && state.gradeBand) document.body.dataset.grade = state.gradeBand;
+
+    if (name === 'home') renderHome();
+    if (name === 'sticker-book') renderStickerBook();
+    if (name === 'student-select') renderStudentSelect();
+  }
+  window.showScreen = showScreen; // for inline onclick
+
+  // ---------- Wire up events ----------
+  // Auth handlers
+  document.getElementById('auth-tab-signin').addEventListener('click', () => showAuthScreen('signin'));
+  document.getElementById('auth-tab-signup').addEventListener('click', () => showAuthScreen('signup'));
+  document.getElementById('auth-submit').addEventListener('click', submitAuth);
+  document.getElementById('auth-password').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') submitAuth();
+  });
+  document.getElementById('auth-forgot').addEventListener('click', async () => {
+    const email = document.getElementById('auth-email').value.trim();
+    const errEl = document.getElementById('auth-error');
+    if (!email) {
+      errEl.style.color = 'var(--muted)';
+      errEl.textContent = 'Enter your email above first, then tap "Forgot your password?"';
+      return;
+    }
+    const { error } = await sb.auth.resetPasswordForEmail(email);
+    if (error) {
+      errEl.style.color = 'var(--error)';
+      errEl.textContent = error.message;
+    } else {
+      errEl.style.color = 'var(--success)';
+      errEl.textContent = 'Check your inbox for a reset link.';
+    }
+  });
+
+  document.getElementById('unlock').addEventListener('click', async () => {
+    await ensureAudio();
+    // Slightly longer priming tone — Safari occasionally drops tones under 30ms.
+    const t = audioCtx.currentTime;
+    playTone(440, t, 0.05);
+    document.getElementById('unlock').style.display = 'none';
+    routeFromUnlock();
+  });
+
+  // Central routing decision after audio is unlocked.
+  // With Supabase auth, the gate is: do we have an active session?
+  async function routeFromUnlock() {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) { showAuthScreen('signin'); return; }
+    // Authenticated → load cloud data into local cache, then show roster.
+    await afterSignIn();
+  }
+
+  // ---------- Auth screen ----------
+  let authMode = 'signin'; // or 'signup'
+  function showAuthScreen(mode) {
+    authMode = mode;
+    document.getElementById('auth-error').textContent = '';
+    // Name field only on sign-up
+    document.getElementById('auth-name-field').style.display = (mode === 'signup') ? 'flex' : 'none';
+    // Heading + tagline
+    document.getElementById('auth-heading').textContent = (mode === 'signup') ? 'Create your account' : 'Welcome back';
+    document.getElementById('auth-tagline').textContent = (mode === 'signup')
+      ? 'Set up a teacher account to manage your class.'
+      : 'Sign in to manage your class.';
+    // Primary button label
+    document.getElementById('auth-submit').textContent = (mode === 'signup') ? 'Create Account' : 'Sign In';
+    // Segmented control active state
+    document.getElementById('auth-tab-signin').classList.toggle('active', mode === 'signin');
+    document.getElementById('auth-tab-signup').classList.toggle('active', mode === 'signup');
+    // Forgot-password link only relevant on sign-in
+    document.getElementById('auth-forgot').style.display = (mode === 'signin') ? 'block' : 'none';
+    showScreen('auth');
+  }
+
+  async function submitAuth() {
+    const email    = document.getElementById('auth-email').value.trim();
+    const password = document.getElementById('auth-password').value;
+    const name     = document.getElementById('auth-name').value.trim();
+    const errEl    = document.getElementById('auth-error');
+    errEl.style.color = ''; // reset (forgot-password handler may have changed it)
+    errEl.textContent = '';
+
+    if (!email || !password) { errEl.textContent = 'Email and password are required.'; return; }
+    if (authMode === 'signup' && password.length < 6) {
+      errEl.textContent = 'Password must be at least 6 characters.'; return;
+    }
+
+    document.getElementById('auth-submit').disabled = true;
+    try {
+      let result;
+      if (authMode === 'signup') {
+        result = await sb.auth.signUp({
+          email, password,
+          options: { data: { display_name: name || email.split('@')[0] } }
+        });
+      } else {
+        result = await sb.auth.signInWithPassword({ email, password });
+      }
+      if (result.error) { errEl.textContent = result.error.message; return; }
+      // Success → load cloud state (and migrate any local data) then show roster.
+      await afterSignIn();
+    } catch (e) {
+      errEl.textContent = 'Something went wrong. Try again.';
+    } finally {
+      document.getElementById('auth-submit').disabled = false;
+    }
+  }
+
+  async function signOut() {
+    await sb.auth.signOut();
+    showAuthScreen('signin');
+  }
+  function routeForActiveStudent() {
+    if (!state) return showScreen('student-select');
+    if (!state.gradeBand) { showScreen('grade-select'); return; }
+    document.body.dataset.grade = state.gradeBand;
+    if (!state.avatar) { renderAvatarGrid(); showScreen('avatar-select'); return; }
+    showScreen('home');
+  }
+
+  // Grade-band selection (existing flow — current student)
+  document.querySelectorAll('.grade-card[data-grade]').forEach(card => {
+    card.addEventListener('click', () => {
+      state.gradeBand = card.dataset.grade;
+      document.body.dataset.grade = state.gradeBand;
+      saveState();
+      renderAvatarGrid();
+      showScreen('avatar-select');
+    });
+  });
+
+  // ---------- Setup mode (single vs class) ----------
+  document.querySelectorAll('.grade-card[data-setup]').forEach(card => {
+    card.addEventListener('click', () => {
+      const choice = card.dataset.setup;
+      root.setupMode = choice;
+      saveState();
+      if (choice === 'single') {
+        const s = addStudent({ name: 'Player 1' });
+        setActiveStudent(s.id);
+        showScreen('grade-select');
+      } else {
+        focusPinInput('pin-setup-input');
+        showScreen('pin-setup');
+      }
+    });
+  });
+
+  // ---------- PIN handling ----------
+  function wirePinInput(containerId, onComplete) {
+    const inputs = document.querySelectorAll('#' + containerId + ' input');
+    inputs.forEach((inp, i) => {
+      inp.addEventListener('input', () => {
+        inp.value = inp.value.replace(/\D/g, '');
+        if (inp.value && i < inputs.length - 1) inputs[i+1].focus();
+        const pin = Array.from(inputs).map(x => x.value).join('');
+        onComplete(pin, inputs);
+      });
+      inp.addEventListener('keydown', (e) => {
+        if (e.key === 'Backspace' && !inp.value && i > 0) inputs[i-1].focus();
+      });
+    });
+  }
+  function focusPinInput(containerId) {
+    const inputs = document.querySelectorAll('#' + containerId + ' input');
+    inputs.forEach(i => i.value = '');
+    setTimeout(() => inputs[0] && inputs[0].focus(), 50);
+  }
+  wirePinInput('pin-setup-input', (pin) => {
+    document.getElementById('pin-setup-confirm').disabled = pin.length !== 4;
+  });
+  document.getElementById('pin-setup-back').addEventListener('click', () => {
+    root.setupMode = null;
+    saveState();
+    showScreen('setup-mode');
+  });
+  document.getElementById('grade-select-back').addEventListener('click', () => {
+    // If we're in setup (no avatar yet for this student) and class mode hasn't placed them, just go back.
+    if (root.setupMode === 'class') showScreen('student-select');
+    else if (state && state.avatar) showScreen('home');
+    else { root.setupMode = null; saveState(); showScreen('setup-mode'); }
+  });
+  document.getElementById('avatar-back').addEventListener('click', () => {
+    // If student already has an avatar (e.g. they came here to change it), go home.
+    // Otherwise step back to grade-select (or student-select in class mode).
+    if (state && state.avatar) showScreen('home');
+    else if (root.setupMode === 'class') showScreen('student-select');
+    else showScreen('grade-select');
+  });
+  document.getElementById('summary-switch-student').addEventListener('click', () => showScreen('student-select'));
+  document.getElementById('cancel-intro').addEventListener('click', () => {
+    // Dismiss without marking as seen so they'll see instructions next time they actually want to play.
+    document.getElementById('intro-modal').classList.remove('active');
+    showScreen('home');
+  });
+  document.getElementById('intro-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'intro-modal') {
+      e.currentTarget.classList.remove('active');
+      showScreen('home');
+    }
+  });
+  document.getElementById('pin-setup-confirm').addEventListener('click', () => {
+    const pin = Array.from(document.querySelectorAll('#pin-setup-input input')).map(i => i.value).join('');
+    if (pin.length !== 4) return;
+    root.teacherPin = pin;
+    saveState();
+    openAddStudentScreen(true /* first time */);
+  });
+
+  // ---------- Add student flow ----------
+  function openAddStudentScreen(isFirst) {
+    document.getElementById('add-student-title').textContent =
+      isFirst ? 'Add Your First Student' : 'Add a Student';
+    const nameInput = document.getElementById('new-student-name');
+    nameInput.value = '';
+    nameInput.style.borderColor = '';
+    // Reset grade toggle to K–2 default
+    newStudentGrade = 'junior';
+    document.querySelectorAll('#new-grade-toggle .auth-toggle-btn').forEach((b, i) => {
+      b.classList.toggle('active', i === 0);
+    });
+    showScreen('add-student');
+    setTimeout(() => nameInput.focus(), 50);
+  }
+  // New add-student flow: toggle grade band, then submit
+  let newStudentGrade = 'junior';
+  document.querySelectorAll('#new-grade-toggle .auth-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#new-grade-toggle .auth-toggle-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      newStudentGrade = btn.dataset.newgrade;
+    });
+  });
+  document.getElementById('add-student-submit').addEventListener('click', () => {
+    const nameInput = document.getElementById('new-student-name');
+    const name = nameInput.value.trim();
+    if (!name) {
+      nameInput.focus();
+      nameInput.style.borderColor = 'var(--error)';
+      return;
+    }
+    nameInput.style.borderColor = '';
+    addStudent({ name, gradeBand: newStudentGrade });
+    renderStudentSelect();
+    showScreen('student-select');
+  });
+
+  // ---------- Student select ----------
+  function renderStudentSelect() {
+    const list = document.getElementById('student-list');
+    list.innerHTML = '';
+    root.students.forEach(s => {
+      const btn = document.createElement('button');
+      btn.className = 'student-pick';
+      btn.innerHTML = `<span class="av">${s.avatar || '🎵'}</span><span class="nm">${s.name}</span>`;
+      btn.addEventListener('click', () => {
+        setActiveStudent(s.id);
+        document.body.dataset.grade = s.gradeBand || '';
+        if (!s.gradeBand) showScreen('grade-select');
+        else if (!s.avatar) { renderAvatarGrid(); showScreen('avatar-select'); }
+        else showScreen('home');
+      });
+      list.appendChild(btn);
+    });
+  }
+  document.getElementById('add-student-cancel').addEventListener('click', () => {
+    // If we have students already, go back to student-select; otherwise dashboard.
+    if (root.students.length > 0) showScreen('student-select');
+    else { renderDashboard(); showScreen('teacher-dashboard'); }
+  });
+  document.getElementById('add-more-student-btn').addEventListener('click', () => openAddStudentScreen(false));
+  document.getElementById('teacher-access-btn').addEventListener('click', () => {
+    // Authenticated teachers go directly to dashboard — PIN flow no longer used.
+    renderDashboard();
+    showScreen('teacher-dashboard');
+  });
+  document.getElementById('signout-btn').addEventListener('click', async () => {
+    const ok = confirm("Sign out of this teacher account?");
+    if (!ok) return;
+    state = null;
+    document.body.dataset.grade = '';
+    await signOut();
+  });
+
+  // ---------- PIN entry (teacher dashboard gate) ----------
+  wirePinInput('pin-entry-input', (pin, inputs) => {
+    if (pin.length !== 4) return;
+    if (pin === root.teacherPin) {
+      renderDashboard();
+      showScreen('teacher-dashboard');
+    } else {
+      document.getElementById('pin-error').textContent = 'Incorrect PIN — try again.';
+      inputs.forEach(i => i.value = '');
+      inputs[0].focus();
+    }
+  });
+  document.getElementById('pin-entry-cancel').addEventListener('click', () => showScreen('student-select'));
+
+  // ---------- Teacher dashboard ----------
+  function renderDashboard() {
+    const wrap = document.getElementById('dashboard-table');
+    let html = `<table><thead><tr>
+      <th>Student</th><th>Grade</th>
+      <th>Pitch Lvl</th><th>Pitch Mastery</th>
+      <th>Rhythm Lvl</th><th>Rhythm Mastery</th>
+      <th>Rounds</th><th>Last Played</th><th></th>
+    </tr></thead><tbody>`;
+    if (root.students.length === 0) {
+      html += `<tr><td colspan="9" style="text-align:center; padding:30px; color:#6b7280;">No students yet — add one to get started.</td></tr>`;
+    } else {
+      root.students.forEach(s => {
+        const tm = masteryFor(s, 'tonal');
+        const rm = masteryFor(s, 'rhythm');
+        const dotRow = (m) => `<span class="mastery-row">` +
+          [1,2,3,4,5].map(l => `<span class="mastery-dot ${m[l]}" title="Level ${l}: ${m[l]}"></span>`).join('') +
+          `</span>`;
+        const rounds = (s.rounds || []).length;
+        const lastDate = s.rounds && s.rounds.length
+          ? new Date(s.rounds[s.rounds.length-1].date).toLocaleDateString()
+          : '—';
+        const gradeLabel = s.gradeBand === 'pro' ? '3-5' : s.gradeBand === 'junior' ? 'K-2' : '—';
+        html += `<tr>
+          <td><span style="font-size:24px;">${s.avatar || '🎵'}</span> ${s.name}</td>
+          <td>${gradeLabel}</td>
+          <td>${s.tonalLevel}</td>
+          <td>${dotRow(tm)}</td>
+          <td>${s.rhythmLevel}</td>
+          <td>${dotRow(rm)}</td>
+          <td>${rounds}</td>
+          <td>${lastDate}</td>
+          <td><button class="dash-play" data-sid="${s.id}">▶ Play</button></td>
+        </tr>`;
+      });
+    }
+    html += `</tbody></table>`;
+    wrap.innerHTML = html;
+    // Wire per-row Play buttons → launch that student's session
+    wrap.querySelectorAll('.dash-play').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const s = root.students.find(x => x.id === btn.dataset.sid);
+        if (!s) return;
+        setActiveStudent(s.id);
+        document.body.dataset.grade = s.gradeBand || '';
+        if (!s.gradeBand) showScreen('grade-select');
+        else if (!s.avatar) { renderAvatarGrid(); showScreen('avatar-select'); }
+        else showScreen('home');
+      });
+    });
+  }
+  document.getElementById('dashboard-add').addEventListener('click', () => openAddStudentScreen(false));
+  document.getElementById('dashboard-back').addEventListener('click', () => showScreen('student-select'));
+
+  // Avatar selection (handlers attached dynamically in renderAvatarGrid)
+  let pendingAvatar = null;
+  document.getElementById('avatar-confirm').addEventListener('click', () => {
+    if (!pendingAvatar) return;
+    state.avatar = pendingAvatar;
+    saveState();
+    showScreen('home');
+  });
+  document.getElementById('my-avatar').addEventListener('click', () => {
+    renderAvatarGrid();
+    showScreen('avatar-select');
+  });
+
+  document.getElementById('stickers-btn').addEventListener('click', () => showScreen('sticker-book'));
+
+  // ---------- Settings modal ----------
+  const settingsModal = document.getElementById('settings-modal');
+  document.getElementById('settings-btn').addEventListener('click', () => settingsModal.classList.add('active'));
+  document.getElementById('close-settings').addEventListener('click', () => settingsModal.classList.remove('active'));
+  settingsModal.addEventListener('click', (e) => { if (e.target === settingsModal) settingsModal.classList.remove('active'); });
+
+  document.getElementById('settings-change-avatar').addEventListener('click', () => {
+    settingsModal.classList.remove('active');
+    renderAvatarGrid();
+    showScreen('avatar-select');
+  });
+  document.getElementById('settings-change-grade').addEventListener('click', () => {
+    settingsModal.classList.remove('active');
+    showScreen('grade-select');
+  });
+  document.getElementById('settings-signout').addEventListener('click', async () => {
+    const ok = confirm("Sign out of this teacher account?");
+    if (!ok) return;
+    settingsModal.classList.remove('active');
+    state = null;
+    document.body.dataset.grade = '';
+    await signOut();
+  });
+  document.getElementById('settings-reset').addEventListener('click', () => {
+    const ok = confirm("This will erase all students, levels, stickers, and PIN on this device. Are you sure?");
+    if (!ok) return;
+    localStorage.removeItem(LS_KEY);
+    location.reload();
+  });
+
+  document.querySelectorAll('.mode-card').forEach(btn => {
+    btn.addEventListener('click', () => startMode(btn.dataset.mode));
+  });
+
+  document.getElementById('listen-btn').addEventListener('click', runTrialPlayback);
+  document.getElementById('same-btn').addEventListener('click', () => answer(true));
+  document.getElementById('diff-btn').addEventListener('click', () => answer(false));
+  document.getElementById('replay-btn').addEventListener('click', replayCurrentTrial);
+  document.getElementById('next-btn').addEventListener('click', advanceTrial);
+  document.getElementById('close-intro').addEventListener('click', () => {
+    document.getElementById('intro-modal').classList.remove('active');
+    state.introSeen[currentMode] = true;
+    saveState();
+  });
+
+  document.getElementById('again-btn').addEventListener('click', () => {
+    trialIndex = 0;
+    trialResults = [];
+    currentLevel = state[currentMode === 'tonal' ? 'tonalLevel' : 'rhythmLevel'];
+    updateLevelPill();
+    nextTrial();
+    showScreen('play');
+  });
+  document.getElementById('switch-btn').addEventListener('click', () => showScreen('home'));
+  function quitRound() {
+    const ok = confirm("Quit this round? Your progress won't be saved.");
+    if (!ok) return;
+    cancelAllAudio();
+    isPlaying = false;
+    canAnswer = false;
+    showScreen('home');
+  }
+  document.getElementById('quit-round-btn').addEventListener('click', quitRound);
+
+  document.getElementById('back-btn').addEventListener('click', () => {
+    const onHome = document.getElementById('home').classList.contains('active');
+    const onPlay = document.getElementById('play').classList.contains('active');
+    if (onPlay) { quitRound(); return; }
+    if (onHome && root.setupMode === 'class') showScreen('student-select');
+    else showScreen('home');
+  });
+
+  document.getElementById('info-btn').addEventListener('click', () => {
+    document.getElementById('info-modal').classList.add('active');
+  });
+  document.getElementById('close-info').addEventListener('click', () => {
+    document.getElementById('info-modal').classList.remove('active');
+  });
+  document.getElementById('info-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'info-modal') e.currentTarget.classList.remove('active');
+  });
+
+  // Keyboard support
+  document.addEventListener('keydown', (e) => {
+    if (document.getElementById('unlock').style.display !== 'none') return;
+    if (e.key === ' ' || e.key === 'Enter') {
+      const active = document.activeElement;
+      if (active && active.tagName === 'BUTTON') return; // let native handle
+    }
+    if (document.getElementById('play').classList.contains('active')) {
+      if (e.key === 's' || e.key === 'S') document.getElementById('same-btn').click();
+      if (e.key === 'd' || e.key === 'D') document.getElementById('diff-btn').click();
+      if (e.key === 'l' || e.key === 'L' || e.key === ' ') {
+        e.preventDefault();
+        document.getElementById('listen-btn').click();
+      }
+    }
+  });
+
+  // Apply saved grade-band theme on load (only if a student is active)
+  if (state && state.gradeBand) document.body.dataset.grade = state.gradeBand;
+  if (state) renderHome();
+</script>
+</body>
+</html>
